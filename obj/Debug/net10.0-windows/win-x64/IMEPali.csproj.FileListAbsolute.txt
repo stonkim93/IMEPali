@@ -1,0 +1,14 @@
+D:\VSCODE\IMEPali\bin\Debug\net10.0-windows\win-x64\IMEPali.exe
+D:\VSCODE\IMEPali\bin\Debug\net10.0-windows\win-x64\IMEPali.deps.json
+D:\VSCODE\IMEPali\bin\Debug\net10.0-windows\win-x64\IMEPali.runtimeconfig.json
+D:\VSCODE\IMEPali\bin\Debug\net10.0-windows\win-x64\IMEPali.dll
+D:\VSCODE\IMEPali\bin\Debug\net10.0-windows\win-x64\IMEPali.pdb
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.GeneratedMSBuildEditorConfig.editorconfig
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.AssemblyInfoInputs.cache
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.AssemblyInfo.cs
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.csproj.CoreCompileInputs.cache
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.dll
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\refint\IMEPali.dll
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.pdb
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\IMEPali.genruntimeconfig.cache
+D:\VSCODE\IMEPali\obj\Debug\net10.0-windows\win-x64\ref\IMEPali.dll

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWpf>true</UseWpf>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>images\IMEPali.ico</ApplicationIcon>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <NoWarn>$(NoWarn);CA1420</NoWarn>
+    <AssemblyName>IMEPali</AssemblyName>
+    <RootNamespace>IMEPali</RootNamespace>
+  </PropertyGroup>
+
+  <!-- 조건부 이미지 리소스 포함 (Pali어 배열창용 이미지 및 아이콘만 유지) -->
+  <ItemGroup>
+    <EmbeddedResource Include="images\IMEPali.ico" />
+    <EmbeddedResource Include="images\PaliKey1.png" />
+    <EmbeddedResource Include="images\PaliKey2.png" />
+  </ItemGroup>
+
+</Project>
