@@ -41,25 +41,27 @@
 
 ### 1️⃣ 영어 입력 모드에서 Pali어와 Sanskrit어 입력 가능
 
-- **한자키** (RCtrl): 영어 소문자 ↔ 한글CAPS 입력모드
+- **한자키** (RCtrl): Pali어 입력 및 선택 문자 전환 기능
 
 <div align="center">
 
-| 입력 상태 | 포인터 색상 | 트레이 문자 | 설명 |
+| 문자 입력상태 | 아이콘 색상 | 트레이 문자 | NOTE |
 |:---|:---|:---:|:---|
-| **한글** | $\color{white}\Large\blacktriangle$ White | $\color{gray}\large\textbf{P}$ | 영어 소문자 입력 (CAPS Off) |
-| **영어+Pali어** | $\color{orange}\Large\blacktriangle$ Orange | $\color{orange}\large\textbf{P}$ | **한글CAPS** + 빨리/산스크리트 문자 |
+| **한글** | $\color{white}\Large\blacktriangle$ White | $\color{gray}\large\textbf{P}$ | 한글 입력 모드 |
+| **영어/Pali** | $\color{orange}\Large\blacktriangle$ Orange | $\color{orange}\large\textbf{P}$ | 영어 + 빨리/산스크리트 입력모드 |
+
+</div>
 
 
 ### 3️⃣ Pali어 키보드 배열창을 실시간으로 표시
 
-- 트레이 메뉴에서 **Pali어 키보드 배열창** 선택시 키보드 배열 그림을 보여줌 (Always On Top)
+- 트레이 메뉴에서 **Pali어 키보드 배열창** 선택시, 키보드 배열 그림을 보여줌 (Always On Top)
 - CAPS Lock On/Off 반응하여 대문자/소문자 키보드 배열 그림 변경
 
 ### 4️⃣ 입력문자 표시창으로 문자 입력확인 및 학습보조
 
 - 트레이 메뉴에서 **Pali어 입력문자 표시창** 선택시, 키보드로 입력한 문자를 화면에 표시
-- 한자키로 선택글자 전환키 사용시 글자 전환 표시
+- 한자키로 선택글자 전환 기능 사용시 글자 전환 표시
 
 ### 6️⃣ 트레이 아이콘 **클릭**하여 메뉴 선택하고, 옵션 On/Off
 
@@ -107,7 +109,6 @@
 |**r**|**ṛ**|-|**ṝ**|-|-|-|
 |**s**|**ṣ**|-|-|-|**ś**|-|
 
-
 </div>
 
 ### 2️⃣ US+Pali Unicode IME (기존 Pali 자판)
@@ -133,8 +134,13 @@
 * Pali-Sanskrit(Unicode) 키보드 설치 : [palisans_unicode.zip](https://github.com/stonkim93/IMEPali/palisans_unicode.zip)
 
 * 기존 Pali어 문자에 Sanskrit 전용 문자(**ṝ**, **ḹ**)를 추가함.
+
 * 유사한 문자끼리 직관적인 위치로 문자를 재배치함.
+
+* IMEPali앱과 동일한 배열의 자판이지만, 설치가 필요하고, 사용법이 다름. 
+
 * US+Pali(Unicode) IME와 설치방법 및 사용방법은 동일함.
+
 * 문제점 : 한영키(RAlt)가 Pali어 입력에 한글을 입력하려면 한글 IME로 전환해야 함. 
 
 <div align="center">
