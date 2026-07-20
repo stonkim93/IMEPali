@@ -129,8 +129,8 @@ namespace IMEPali
         {
             if (string.IsNullOrEmpty(text)) return text;
             
-            int step = 0;
-            // 첫 번째 유효한 문자를 기준으로 변환 단계를 결정합니다.
+            int targetCategory = -1;
+            // [수정된 부분] 첫 번째 유효한 문자를 기준으로 변환될 '목표 카테고리(절대 인덱스)'를 결정합니다.
             foreach (char c in text)
             {
                 string s = c.ToString();
@@ -139,13 +139,17 @@ namespace IMEPali
                     for (int i = 1; i <= 7; i++)
                     {
                         int next = (cat + i) % 7;
-                        if (chain[next] != null) { step = i; break; }
+                        if (chain[next] != null) 
+                        { 
+                            targetCategory = next; 
+                            break; 
+                        }
                     }
                     break;
                 }
             }
             
-            if (step == 0) return text;
+            if (targetCategory == -1) return text;
 
             StringBuilder sb = new StringBuilder(text.Length);
             foreach (char c in text)
@@ -153,18 +157,15 @@ namespace IMEPali
                 string s = c.ToString();
                 if (_paliCategoryMap.TryGetValue(s, out int cat) && _paliReverseChainMap.TryGetValue(s, out var chain))
                 {
-                    int targetCat = -1;
-                    for (int i = 1; i <= 7; i++)
+                    // [수정된 부분] 첫 번째 글자와 동일한 유형(카테고리)이 해당 문자에 존재하면 변환하고, 없으면 원본을 유지합니다.
+                    if (chain[targetCategory] != null)
                     {
-                        int candidate = (cat + i) % 7;
-                        if (chain[candidate] != null)
-                        {
-                            targetCat = candidate;
-                            if (i >= step) break; // 동일한 전환 스텝으로 이동 시도
-                        }
+                        sb.Append(chain[targetCategory]);
                     }
-                    if (targetCat != -1) sb.Append(chain[targetCat]);
-                    else sb.Append(s);
+                    else
+                    {
+                        sb.Append(s);
+                    }
                 }
                 else
                 {
