@@ -476,6 +476,9 @@ namespace IMEPali
             _stateTimer.Tick += StateTimer_Tick;
             _stateTimer.Start();
             // [이번 수정 부분 끝]
+
+            // [추가된 부분: 앱 시작 시 트레이 메뉴의 '키보드 배열창' 설정 상태에 따라 창을 표시]
+            UpdateKeyboardLayoutState();
         }
 
         // [이번 수정 부분 시작: IME 상태 감지 및 타이머 콜백]
@@ -593,7 +596,7 @@ namespace IMEPali
             StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             
             // Y축을 1.5f 픽셀 아래로 내려 시각적으로 완벽한 상하 중앙 정렬을 맞춤
-            g.DrawString("P", new Font("Arial", 10, FontStyle.Bold), tBrush, new RectangleF(0, 1.5f, size, size), sf);
+            g.DrawString("P", new Font("Segoe UI Black", 10, FontStyle.Bold), tBrush, new RectangleF(0, 1.5f, size, size), sf);
 
             IntPtr hIcon = bmp.GetHicon();
             Icon? oldIcon = _trayIcon.Icon;
