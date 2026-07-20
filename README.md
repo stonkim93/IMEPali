@@ -225,7 +225,7 @@ dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=
 
 ### 3️⃣ 실행 파일 다운로드
 
-오른쪽의 **[Releases]** 탭에서 최신 버전의 `.zip` 파일을 다운로드 하고 압축을 해제합니다.
+오른쪽의 **[Releases]** 탭에서 최신 버전의 [IMEPali.zip](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/IMEPali.zip) 파일을 다운로드 하고 압축을 해제합니다.
 
 ### 4️⃣ 실행하기
 
