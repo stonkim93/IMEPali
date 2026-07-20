@@ -2,9 +2,9 @@
 
 # 🌍 IMEPali
 
-### I'm e-Pali that help keyboard inputs of Pali and Sanskrit charaters
+### I'm e-Pali that help keyboard inputs of Pali and Sanskrit
 
-### IME 설치없이 영어 입력모드에서 Pali어와 Sanskrit어의 입력을 지원하는 앱
+### IME 설치없이 영어 입력모드에서 한자키로 Pali/Sanskrit 입력 지원
 
 ![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows11&logoColor=white)
 ![Framework](https://img.shields.io/badge/.NET-10.0--windows-512BD4?logo=dotnet&logoColor=white)
@@ -22,7 +22,7 @@
 
 > "IMEPointer에는 Pali어, 일본어, 공학용 특수기호 등 다양한 입력모드와 입력모드에 따라 컬러 포인터를 지원하지만 좀더 단순한 앱이 필요하지 않을까?"
 
-- **기존 문제**: IMEPointer 앱에서는 영어 소문자와 한글CAPS 모드를 한자키로 전환하면서 영어와 Pali어를 번갈아 가면서 입력해야 했고, 지원하는 언어와 기능이 많아서 사용이 어려웠다.
+- **기존 문제**: IMEPointer 앱에서는 영어 소문자와 한글CAPS 모드를 한자키로 전환하면서 영어와 Pali어를 번갈아 가면서 입력해야 했고, 지원하는 언어와 기능이 많아서, 처음 사용하기에는 어렵게 느껴질 수 있다.
 - **새로운 활용**: 영어 입력모드에서 한자키를 이용하여 Pali어 입력과 전환키 기능을 지원하고, 불필요한 기능을 제거하여 Pali어 입력 전용 앱을 만듦.
 - **효과**: 영어와 Pali어를 동일한 입력 모드에서 사용할 수 있다. 
 
@@ -48,7 +48,7 @@
 | 문자 입력상태 | 아이콘 색상 | 트레이 문자 | NOTE |
 |:---|:---|:---:|:---|
 | **한글** | $\color{white}\Large\blacktriangle$ White | $\color{gray}\large\textbf{P}$ | 한글 입력 모드 |
-| **영어/Pali** | $\color{orange}\Large\blacktriangle$ Orange | $\color{orange}\large\textbf{P}$ | 영어 + 빨리/산스크리트 입력모드 |
+| **영어/Pali** | $\color{orange}\Large\blacktriangle$ Orange | $\color{orange}\large\textbf{P}$ | 영어 모드에서 Pali(한자키) 입력가능 |
 
 </div>
 
@@ -58,10 +58,15 @@
 - 트레이 메뉴에서 **Pali어 키보드 배열창** 선택시, 키보드 배열 그림을 보여줌 (Always On Top)
 - CAPS Lock On/Off 반응하여 대문자/소문자 키보드 배열 그림 변경
 
+- 키보드 배열 그림을 double click하면 대문자/소문자 전환됨
+
 ### 4️⃣ 입력문자 표시창으로 문자 입력확인 및 학습보조
 
 - 트레이 메뉴에서 **Pali어 입력문자 표시창** 선택시, 키보드로 입력한 문자를 화면에 표시
-- 한자키로 선택글자 전환 기능 사용시 글자 전환 표시
+
+- 한자키 같이 눌러서 입력한 Pali글자 표시
+
+- 선택한 글자를 한자키로 전환기능 사용시 글자전환 표시
 
 ### 6️⃣ 트레이 아이콘 **클릭**하여 메뉴 선택하고, 옵션 On/Off
 
