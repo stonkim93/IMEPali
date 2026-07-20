@@ -294,7 +294,7 @@ dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=
 
 - Coding & Debugging에는 Gemini 3.1 Pro (무료)의 도움을 많이 받았습니다.
 
-- 키보드 배열 검토에는 Claude Haiku 4.5 (무료)를 활용했습니다. 
+- 키보드 배열 검토와 아이콘 생성에는 Claude Haiku 4.5 (무료)를 활용했습니다. 
 
 
 ## 📜 라이선스 (License)
