@@ -545,10 +545,28 @@ namespace IMEPali
         {
             _trayMenu = new ContextMenuStrip();
             
-            var titleItem = new ToolStripMenuItem("IMEPali (Pali/Sanskrit)") { Enabled = false };
+            // [수정된 부분: 첫 번째 메뉴 클릭 시 GitHub 웹페이지로 이동하도록 변경]
+            var titleItem = new ToolStripMenuItem("IMEPali (Pali/Sanskrit)", null, (s, e) => 
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "https://github.com/stonkim93/IMEPali",
+                        UseShellExecute = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("웹페이지를 열 수 없습니다.\n" + ex.Message, "IMEPali", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            });
             titleItem.Font = new Font(titleItem.Font, FontStyle.Bold);
             _trayMenu.Items.Add(titleItem);
-            _trayMenu.Items.Add(new ToolStripMenuItem("한자키+영어 입력/전환 기능") { Enabled = false });
+            
+            // 두 번째 항목("github.com/stonkim93/IMEPali")은 삭제됨
+            
+            _trayMenu.Items.Add(new ToolStripMenuItem("한자키로 Pali어 입력/전환") { Enabled = false });
             _trayMenu.Items.Add(new ToolStripSeparator());
 
             var kbdMenu = new ToolStripMenuItem("Pali어 키보드 배열창", null, (s, e) => {
@@ -586,10 +604,8 @@ namespace IMEPali
                 }
             };
             
-            // [이번 수정 부분 시작: 초기 상태를 가져와 아이콘 그림]
             _lastHangulState = CheckHangulMode();
             UpdateTrayIcon(_lastHangulState);
-            // [이번 수정 부분 끝]
         }
 
         // [이번 수정 부분 시작: 한/영 상태에 따른 색상 동적 변경 및 Y축 중앙 정렬 보정]

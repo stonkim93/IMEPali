@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+1c7a15324cc2e8f5251f607d019e7fc1bb3a613d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5c63b9453d8b0101981c2dff866a8692d388506b")]
 [assembly: System.Reflection.AssemblyProductAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyTitleAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
