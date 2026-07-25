@@ -11,47 +11,66 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
+using System.Linq;
 
 namespace IMEPali
 {
+    #region [ 1. 앱 환경 설정 (AppConfig) ]
+    /// <summary>
+    /// 애플리케이션 전반에서 사용되는 사용자 및 환경 설정 클래스입니다.
+    /// </summary>
     internal static class AppConfig
     {
         public static bool ShowKeyboardLayout = true;
         public static bool ShowTextOverlay = true;
-        // IsKey2Mode는 Caps Lock 상태 동기화로 대체되므로 제거됨
-    }
+        
+        // Pali어 전환용 트리거 키 (0x19: 한자키, 0xA3: 우측 Ctrl키)
+        public static readonly int[] ToggleKeyCodes = { 0x19, 0xA3 };
+        
+        // 트레이 아이콘 한/영 상태 갱신 폴링 주기 (ms)
+        public static readonly int TrayUpdateIntervalMs = 100;
 
-    #region [ 진입점 (Main) ]
+        // 트레이 메뉴의 GitHub 링크
+        public static readonly string GithubRepositoryUrl = "https://github.com/stonkim93/IMEPali";
+    }
+    #endregion
+
+    #region [ 2. 진입점 (Main) ]
     internal static class Program
     {
         [STAThread]
         static void Main()
         {
-            // IMEPali와 IMEPointer 둘 다 중복 실행 방지
-            using Mutex mutexPali = new Mutex(true, "IMEPali_SingleInstance", out bool firstPali);
-            using Mutex mutexPointer = new Mutex(true, "IMEPointer_SingleInstance", out bool firstPointer);
-            
-            if (!firstPali || !firstPointer)
+            // IMEPointer 및 IMEPali 중복 실행 방지
+            using Mutex mutexPointer = new Mutex(true, "IMEPointer_SingleInstance", out bool isPointerFirst);
+            using Mutex mutexPali = new Mutex(true, "IMEPali_SingleInstance", out bool isPaliFirst);
+
+            if (!isPointerFirst || !isPaliFirst)
             {
-                MessageBox.Show("이미 실행 중입니다.", "IMEPali", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("IMEPali 앱이 이미 실행 중입니다.", "IMEPali", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
             Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            Application.Run(new TrayMainForm());
         }
     }
     #endregion
 
-    #region [ 핵심 로직: PaliMap 및 글자 변환 ]
+    #region [ 3. 핵심 로직: Pali어 변환기 (PaliMap) ]
+    /// <summary>
+    /// 영문 키보드 입력을 Pali어 및 특수 기호로 매핑하고 변환하는 핵심 로직 클래스입니다.
+    /// </summary>
     internal static class PaliMap
     {
         private static string _lastOutputChar = "";
 
-        // Pali어 자판 매핑 (지정된 영어 위치에만 할당, 나머지는 빈값(null) 처리되어 기본 영어 입력 유지)
-        public static readonly Dictionary<int, (string Lower, string Upper)> Map = new()
+        /// <summary>
+        /// 특정 영문자 키보드 가상 키코드에 대응하는 Pali어 (소문자, 대문자) 매핑
+        /// </summary>
+        public static readonly Dictionary<int, (string Lower, string Upper)> KeyMap = new()
         {
             { 0x57, ("ś", "Ś") }, { 0x45, ("ṝ", "Ṝ") }, { 0x52, ("ṛ", "Ṛ") }, { 0x54, ("ṭ", "Ṭ") },
             { 0x55, ("ū", "Ū") }, { 0x49, ("ī", "Ī") }, { 0x4F, ("ḹ", "Ḹ") }, { 0x41, ("ā", "Ā") },
@@ -59,8 +78,8 @@ namespace IMEPali
             { 0x4C, ("ḷ", "Ḷ") }, { 0x42, ("ṅ", "Ṅ") }, { 0x4E, ("ṇ", "Ṇ") }, { 0x4D, ("ṃ", "Ṃ") }
         };
 
-        // 전환 카테고리 (0:None, 1:Dot below, 2:Macron, 3:Dot below+Macron, 4:Dot above, 5:Accent, 6:Tilde)
-        private static readonly Dictionary<string, string?[]> _paliChains = new()
+        // 7단계 변환 카테고리
+        private static readonly Dictionary<string, string?[]> _transformationChains = new()
         {
             {"a", new string?[]{"a", null, "ā", null, null, null, null}},
             {"d", new string?[]{"d", "ḍ", null, null, null, null, null}},
@@ -75,32 +94,34 @@ namespace IMEPali
             {"s", new string?[]{"s", "ṣ", null, null, "ś", null, null}},
         };
 
-        private static readonly Dictionary<string, int> _paliCategoryMap = new();
-        private static readonly Dictionary<string, string?[]> _paliReverseChainMap = new();
+        private static readonly Dictionary<string, int> _categoryMap = new();
+        private static readonly Dictionary<string, string?[]> _reverseChainMap = new();
 
         static PaliMap()
         {
-            _paliChains["s"] = new string?[] { "s", "ṣ", null, null, null, "ś", null };
+            _transformationChains["s"] = new string?[] { "s", "ṣ", null, null, null, "ś", null };
             
+            // 대문자 체인 생성
             var upperChains = new Dictionary<string, string?[]>();
-            foreach (var kv in _paliChains)
+            foreach (var kv in _transformationChains)
             {
                 var upperArr = new string?[7];
                 for (int i = 0; i < 7; i++)
                     upperArr[i] = kv.Value[i]?.ToUpper();
                 upperChains[kv.Key.ToUpper()] = upperArr;
             }
-            foreach (var kv in upperChains) _paliChains[kv.Key] = kv.Value;
+            foreach (var kv in upperChains) _transformationChains[kv.Key] = kv.Value;
 
-            foreach (var kv in _paliChains)
+            // 카테고리 및 역참조 매핑 최적화
+            foreach (var kv in _transformationChains)
             {
                 string?[] chain = kv.Value;
                 for (int i = 0; i < 7; i++)
                 {
                     if (chain[i] != null)
                     {
-                        _paliCategoryMap[chain[i]!] = i;
-                        _paliReverseChainMap[chain[i]!] = chain;
+                        _categoryMap[chain[i]!] = i;
+                        _reverseChainMap[chain[i]!] = chain;
                     }
                 }
             }
@@ -109,39 +130,42 @@ namespace IMEPali
         public static string GetLastOutputChar() => _lastOutputChar;
         public static void SetLastOutputChar(string ch) => _lastOutputChar = ch;
 
-        public static string? GetPaliChar(int vkCode, bool isUpper)
+        /// <summary>
+        /// 키코드를 기반으로 Pali어 문자를 반환합니다.
+        /// </summary>
+        public static string? GetPaliCharacter(int virtualKeyCode, bool isUpperCase)
         {
-            if (Map.TryGetValue(vkCode, out var val))
+            if (KeyMap.TryGetValue(virtualKeyCode, out var val))
             {
-                _lastOutputChar = isUpper ? val.Upper : val.Lower;
-                MainForm.Instance?.ShowOverlay(_lastOutputChar);
+                _lastOutputChar = isUpperCase ? val.Upper : val.Lower;
+                TrayMainForm.Instance?.ShowOverlay(_lastOutputChar);
                 return _lastOutputChar;
             }
             return null;
         }
 
-        public static void HandlePaliTransformation()
+        public static void ProcessTransformation()
         {
-            TextSelectionUtils.TransformAndReplaceText(_lastOutputChar, ApplyPaliTransformation, SetLastOutputChar);
+            ClipboardUtility.TransformAndReplaceSelectedText(_lastOutputChar, ApplyTransformationRules, SetLastOutputChar);
         }
 
-        private static string ApplyPaliTransformation(string text)
+        private static string ApplyTransformationRules(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
             
-            int targetCategory = -1;
-            // [수정된 부분] 첫 번째 유효한 문자를 기준으로 변환될 '목표 카테고리(절대 인덱스)'를 결정합니다.
+            int targetCategoryIndex = -1;
+            
             foreach (char c in text)
             {
                 string s = c.ToString();
-                if (_paliCategoryMap.TryGetValue(s, out int cat) && _paliReverseChainMap.TryGetValue(s, out var chain))
+                if (_categoryMap.TryGetValue(s, out int cat) && _reverseChainMap.TryGetValue(s, out var chain))
                 {
                     for (int i = 1; i <= 7; i++)
                     {
                         int next = (cat + i) % 7;
                         if (chain[next] != null) 
                         { 
-                            targetCategory = next; 
+                            targetCategoryIndex = next; 
                             break; 
                         }
                     }
@@ -149,213 +173,234 @@ namespace IMEPali
                 }
             }
             
-            if (targetCategory == -1) return text;
+            if (targetCategoryIndex == -1) return text;
 
-            StringBuilder sb = new StringBuilder(text.Length);
+            StringBuilder resultBuilder = new StringBuilder(text.Length);
             foreach (char c in text)
             {
                 string s = c.ToString();
-                if (_paliCategoryMap.TryGetValue(s, out int cat) && _paliReverseChainMap.TryGetValue(s, out var chain))
+                if (_categoryMap.TryGetValue(s, out _) && _reverseChainMap.TryGetValue(s, out var chain))
                 {
-                    // [수정된 부분] 첫 번째 글자와 동일한 유형(카테고리)이 해당 문자에 존재하면 변환하고, 없으면 원본을 유지합니다.
-                    if (chain[targetCategory] != null)
-                    {
-                        sb.Append(chain[targetCategory]);
-                    }
-                    else
-                    {
-                        sb.Append(s);
-                    }
+                    resultBuilder.Append(chain[targetCategoryIndex] ?? s);
                 }
                 else
                 {
-                    sb.Append(c);
+                    resultBuilder.Append(c);
                 }
             }
-            return sb.ToString();
+            return resultBuilder.ToString();
         }
     }
     #endregion
 
-    #region [ 글로벌 입력 훅 (GlobalInputHook) ]
-    internal static class GlobalInputHook
+    #region [ 4. 글로벌 키보드 훅 (KeyboardHookManager) ]
+    /// <summary>
+    /// OS 수준에서 키보드 입력을 가로채어 Pali어 입력 상태를 관리합니다.
+    /// </summary>
+    internal static class KeyboardHookManager
     {
-        public static volatile bool IsSending = false;
+        public static volatile bool IsSendingInput = false;
         private static IntPtr _hookID = IntPtr.Zero;
-        private static NativeMethods.LowLevelKeyboardProc _proc = HookCallback;
+        private static NativeMethods.LowLevelKeyboardProc _hookProcedure = HookCallback;
         
-        private static bool _isHanjaDown = false;
-        private static bool _hanjaUsedForTyping = false;
+        private static bool _isToggleKeyDown = false;
+        private static bool _toggleKeyUsedForTyping = false;
 
-        public static void Start()
+        public static void InitializeHook()
         {
-            using (var curProcess = System.Diagnostics.Process.GetCurrentProcess())
-            using (var curModule = curProcess.MainModule)
-            {
-                _hookID = NativeMethods.SetWindowsHookEx(NativeMethods.WH_KEYBOARD_LL, _proc, NativeMethods.GetModuleHandle(curModule!.ModuleName), 0);
-            }
+            using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
+            using var curModule = curProcess.MainModule;
+            _hookID = NativeMethods.SetWindowsHookEx(NativeMethods.WH_KEYBOARD_LL, _hookProcedure, NativeMethods.GetModuleHandle(curModule!.ModuleName), 0);
         }
 
-        public static void Stop()
+        public static void ReleaseHook()
         {
-            NativeMethods.UnhookWindowsHookEx(_hookID);
-            _hookID = IntPtr.Zero;
+            if (_hookID != IntPtr.Zero)
+            {
+                NativeMethods.UnhookWindowsHookEx(_hookID);
+                _hookID = IntPtr.Zero;
+            }
         }
 
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && !IsSending)
+            try
             {
-                int vkCode = Marshal.ReadInt32(lParam);
-                bool isKeyDown = (wParam == (IntPtr)0x0100 || wParam == (IntPtr)0x0104);
-                bool isKeyUp = (wParam == (IntPtr)0x0101 || wParam == (IntPtr)0x0105);
-
-                if (vkCode == 0x19 || vkCode == 0xA3)
+                if (nCode >= 0 && !IsSendingInput)
                 {
-                    if (isKeyDown)
+                    int virtualKeyCode = Marshal.ReadInt32(lParam);
+                    bool isKeyDown = (wParam == (IntPtr)0x0100 || wParam == (IntPtr)0x0104);
+                    bool isKeyUp = (wParam == (IntPtr)0x0101 || wParam == (IntPtr)0x0105);
+
+                    // 지정된 Toggle 키 (한자키, RCtrl) 인지 확인
+                    if (AppConfig.ToggleKeyCodes.Contains(virtualKeyCode))
                     {
-                        if (!_isHanjaDown) { _isHanjaDown = true; _hanjaUsedForTyping = false; }
-                        return (IntPtr)1; 
-                    }
-                    else if (isKeyUp)
-                    {
-                        if (_isHanjaDown)
+                        if (isKeyDown)
                         {
-                            _isHanjaDown = false;
-                            if (!_hanjaUsedForTyping)
-                            {
-                                PaliMap.HandlePaliTransformation();
-                            }
+                            if (!_isToggleKeyDown) { _isToggleKeyDown = true; _toggleKeyUsedForTyping = false; }
+                            return (IntPtr)1; 
                         }
-                        return (IntPtr)1; 
-                    }
-                }
-
-                if (isKeyDown)
-                {
-                    if (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1 || vkCode == 0x14) 
-                    {
-                        // 수식어 키는 통과
-                    }
-                    else if (_isHanjaDown)
-                    {
-                        _hanjaUsedForTyping = true;
-                        bool isShift = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
-                        bool capsOn = (NativeMethods.GetKeyState(0x14) & 0x0001) != 0;
-                        bool isUpper = isShift ^ capsOn;
-
-                        string? result = PaliMap.GetPaliChar(vkCode, isUpper);
-                        if (result != null)
+                        else if (isKeyUp)
                         {
-                            IsSending = true;
-                            NativeMethods.SendUnicodeString(result);
-                            IsSending = false;
+                            if (_isToggleKeyDown)
+                            {
+                                _isToggleKeyDown = false;
+                                if (!_toggleKeyUsedForTyping)
+                                {
+                                    PaliMap.ProcessTransformation();
+                                }
+                            }
                             return (IntPtr)1; 
                         }
                     }
-                    else
+
+                    if (isKeyDown)
                     {
-                        // [수정된 부분] 영어를 1글자 입력하고 한자키를 눌렀을 때 변환되도록 마지막 입력 문자를 기록
-                        if (vkCode >= 0x41 && vkCode <= 0x5A) // A~Z
+                        if (virtualKeyCode == 0x10 || virtualKeyCode == 0xA0 || virtualKeyCode == 0xA1 || virtualKeyCode == 0x14) 
                         {
-                            bool isShift = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
-                            bool capsOn = (NativeMethods.GetKeyState(0x14) & 0x0001) != 0;
-                            bool isUpper = isShift ^ capsOn;
-                            char c = isUpper ? (char)vkCode : (char)(vkCode + 32);
-                            PaliMap.SetLastOutputChar(c.ToString());
+                        }
+                        else if (_isToggleKeyDown)
+                        {
+                            _toggleKeyUsedForTyping = true;
+                            bool isShiftDown = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+                            bool isCapsOn = (NativeMethods.GetKeyState(0x14) & 0x0001) != 0;
+                            bool isUpperCase = isShiftDown ^ isCapsOn;
+
+                            string? mappedChar = PaliMap.GetPaliCharacter(virtualKeyCode, isUpperCase);
+                            if (mappedChar != null)
+                            {
+                                SendString(mappedChar);
+                                return (IntPtr)1; 
+                            }
                         }
                         else
                         {
-                            // 영문자가 아닌 키보드 입력(스페이스, 숫자, 특수기호 등)이 들어오면 단일 문자 PE 전환 기록 초기화
-                            PaliMap.SetLastOutputChar("");
+                            if (virtualKeyCode >= 0x41 && virtualKeyCode <= 0x5A) // A~Z
+                            {
+                                bool isShiftDown = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+                                bool isCapsOn = (NativeMethods.GetKeyState(0x14) & 0x0001) != 0;
+                                bool isUpperCase = isShiftDown ^ isCapsOn;
+                                char c = isUpperCase ? (char)virtualKeyCode : (char)(virtualKeyCode + 32);
+                                PaliMap.SetLastOutputChar(c.ToString());
+                            }
+                            else
+                            {
+                                PaliMap.SetLastOutputChar(""); 
+                            }
                         }
                     }
-                }
 
-                // Caps Lock(0x14) 입력 시에만 배열창 UI 업데이트를 호출하도록 변경
-                if (AppConfig.ShowKeyboardLayout && vkCode == 0x14)
-                {
-                    MainForm.Instance?.UpdateKeyboardLayoutState();
+                    if (AppConfig.ShowKeyboardLayout && virtualKeyCode == 0x14)
+                    {
+                        TrayMainForm.Instance?.UpdateKeyboardLayoutVisibility();
+                    }
                 }
+            }
+            catch
+            {
+                // 후킹 루프 내 예외 방어
             }
             return NativeMethods.CallNextHookEx(_hookID, nCode, wParam, lParam);
         }
 
-        public static void SendReplacement(int backspaces, string text)
+        public static void SendReplacementText(int backspaces, string text)
         {
-            IsSending = true;
-            var inputs = new List<NativeMethods.INPUT>();
-            bool shiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+            IsSendingInput = true;
+            var inputList = new List<NativeMethods.INPUT>();
+            bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
             
-            if (shiftHeld) inputs.Add(MakeKeyUp(0x10));
+            if (isShiftHeld) inputList.Add(CreateKeyInput(0x10, true));
             
             for (int i = 0; i < backspaces; i++)
             {
-                inputs.Add(MakeKeyDown(0x08));
-                inputs.Add(MakeKeyUp(0x08));
+                inputList.Add(CreateKeyInput(0x08, false)); 
+                inputList.Add(CreateKeyInput(0x08, true));  
             }
-            NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
+            
+            NativeMethods.SendInput((uint)inputList.Count, inputList.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
             
             if (text.Length > 0) NativeMethods.SendUnicodeString(text);
             
-            // 대문자 입력 시 Shift 키가 1회만 눌린 것으로 인식되도록 Shift 재활성화 코드 제거
-            IsSending = false;
+            IsSendingInput = false;
         }
 
-        public static NativeMethods.INPUT MakeKeyDown(ushort vk) => new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = vk } } };
-        public static NativeMethods.INPUT MakeKeyUp(ushort vk) => new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = vk, dwFlags = 0x0002 } } };
+        private static void SendString(string text)
+        {
+            IsSendingInput = true;
+            NativeMethods.SendUnicodeString(text);
+            IsSendingInput = false;
+        }
+
+        public static NativeMethods.INPUT CreateKeyInput(ushort virtualKey, bool isKeyUp)
+        {
+            return new NativeMethods.INPUT
+            {
+                type = 1,
+                U = new NativeMethods.InputUnion
+                {
+                    ki = new NativeMethods.KEYBDINPUT
+                    {
+                        wVk = virtualKey,
+                        dwFlags = isKeyUp ? 0x0002u : 0x0000u
+                    }
+                }
+            };
+        }
     }
     #endregion
 
-    #region [ 텍스트 선택/복사 유틸리티 ]
-    internal static class TextSelectionUtils
+    #region [ 5. 텍스트/클립보드 제어 유틸리티 (ClipboardUtility) ]
+    /// <summary>
+    /// UI Automation 및 Clipboard API를 활용하여 선택된 텍스트를 읽고 변경합니다.
+    /// </summary>
+    internal static class ClipboardUtility
     {
-        public static volatile bool IsConverting = false;
+        public static volatile bool IsProcessing = false;
 
-        public static void TransformAndReplaceText(string lastOutputChar, Func<string, string> transformFunc, Action<string> setLastOutputChar)
+        public static void TransformAndReplaceSelectedText(string lastOutputChar, Func<string, string> transformationFunc, Action<string> updateLastCharAction)
         {
-            if (IsConverting) return;
-            IsConverting = true;
+            if (IsProcessing) return;
+            IsProcessing = true;
             
-            Thread thread = new Thread(() =>
+            Task.Run(() =>
             {
                 try
                 {
-                    string? selected = ReadSelectedText(out bool isUia);
+                    string? selectedText = ReadSelectedText(out bool isUiaRetrieved);
                     
-                    if (!string.IsNullOrEmpty(selected))
+                    if (!string.IsNullOrEmpty(selectedText))
                     {
-                        string toggled = transformFunc(selected);
-                        if (toggled != selected)
+                        string transformed = transformationFunc(selectedText);
+                        if (transformed != selectedText)
                         {
-                            MainForm.Instance?.ShowOverlay($"{selected[0]}→{toggled[0]}");
-                            setLastOutputChar(toggled.Length == 1 ? toggled : "");
-                            GlobalInputHook.SendReplacement(0, toggled);
+                            TrayMainForm.Instance?.ShowOverlay($"{selectedText[0]}→{transformed[0]}");
+                            updateLastCharAction(transformed.Length == 1 ? transformed : "");
+                            KeyboardHookManager.SendReplacementText(0, transformed);
                         }
-                        else if (!isUia) CancelSelection();
+                        else if (!isUiaRetrieved)
+                        {
+                            CancelTextSelection();
+                        }
                     }
                     else if (!string.IsNullOrEmpty(lastOutputChar))
                     {
-                        string toggled = transformFunc(lastOutputChar);
-                        if (toggled != lastOutputChar)
+                        string transformed = transformationFunc(lastOutputChar);
+                        if (transformed != lastOutputChar)
                         {
-                            MainForm.Instance?.ShowOverlay($"{lastOutputChar[0]}→{toggled[0]}");
-                            setLastOutputChar(toggled);
-                            GlobalInputHook.SendReplacement(1, toggled);
+                            TrayMainForm.Instance?.ShowOverlay($"{lastOutputChar[0]}→{transformed[0]}");
+                            updateLastCharAction(transformed);
+                            KeyboardHookManager.SendReplacementText(1, transformed);
                         }
                     }
                 }
                 catch { }
-                finally { IsConverting = false; }
+                finally { IsProcessing = false; }
             });
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.IsBackground = true;
-            thread.Start();
         }
 
-        private static string? ReadSelectedText(out bool isUia)
+        private static string? ReadSelectedText(out bool isUiaRetrieved)
         {
-            isUia = false;
+            isUiaRetrieved = false;
             try
             {
                 var focusedElement = AutomationElement.FocusedElement;
@@ -367,7 +412,7 @@ namespace IMEPali
                         string text = selections[0].GetText(-1).Trim('\r', '\n', '\t', ' ', '\0');
                         if (text.Length > 0)
                         {
-                            isUia = true;
+                            isUiaRetrieved = true;
                             return text;
                         }
                     }
@@ -375,62 +420,74 @@ namespace IMEPali
             }
             catch { }
 
-            // Fallback: Ctrl+C Win32 Clipboard
-            bool shiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
-            string? saved = GetTextWin32();
+            bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+            string? backupClipboardText = GetClipboardText();
             try
             {
-                ClearWin32();
-                SendCtrlC(shiftHeld);
-                string? copied = null;
+                ClearClipboard();
+                SendCtrlC(isShiftHeld);
+                string? copiedText = null;
+                
                 for (int i = 0; i < 20; i++)
                 {
                     Thread.Sleep(20);
-                    copied = GetTextWin32();
-                    if (!string.IsNullOrEmpty(copied)) break;
+                    copiedText = GetClipboardText();
+                    if (!string.IsNullOrEmpty(copiedText)) break;
                 }
-                RestoreClipboardAsync(saved);
-                return string.IsNullOrEmpty(copied) ? null : copied.Trim('\r', '\n', '\t', ' ', '\0');
+                
+                RestoreClipboardTextAsync(backupClipboardText);
+                return string.IsNullOrEmpty(copiedText) ? null : copiedText.Trim('\r', '\n', '\t', ' ', '\0');
             }
             catch { return null; }
         }
 
-        private static void SendCtrlC(bool shiftHeld)
+        private static void SendCtrlC(bool isShiftHeld)
         {
-            GlobalInputHook.IsSending = true;
+            KeyboardHookManager.IsSendingInput = true;
             var inputs = new List<NativeMethods.INPUT>();
-            if (shiftHeld) inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x10, dwFlags = 0x0002 } } });
-            inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x11 } } });
-            inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x43 } } });
-            inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x43, dwFlags = 0x0002 } } });
-            inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x11, dwFlags = 0x0002 } } });
-            if (shiftHeld) inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x10 } } });
+            
+            if (isShiftHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x10, true));
+            
+            inputs.Add(KeyboardHookManager.CreateKeyInput(0x11, false));
+            inputs.Add(KeyboardHookManager.CreateKeyInput(0x43, false));
+            inputs.Add(KeyboardHookManager.CreateKeyInput(0x43, true));
+            inputs.Add(KeyboardHookManager.CreateKeyInput(0x11, true));
+            
+            if (isShiftHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x10, false));
+            
             NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
-            GlobalInputHook.IsSending = false;
+            KeyboardHookManager.IsSendingInput = false;
         }
         
-        private static void CancelSelection()
+        private static void CancelTextSelection()
         {
-            GlobalInputHook.IsSending = true;
-            var inputs = new List<NativeMethods.INPUT>();
-            inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x27 } } });
-            inputs.Add(new NativeMethods.INPUT { type = 1, U = new NativeMethods.InputUnion { ki = new NativeMethods.KEYBDINPUT { wVk = 0x27, dwFlags = 0x0002 } } });
-            NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
-            GlobalInputHook.IsSending = false;
+            KeyboardHookManager.IsSendingInput = true;
+            var inputs = new NativeMethods.INPUT[]
+            {
+                KeyboardHookManager.CreateKeyInput(0x27, false),
+                KeyboardHookManager.CreateKeyInput(0x27, true)
+            };
+            NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
+            KeyboardHookManager.IsSendingInput = false;
         }
 
-        private static string? GetTextWin32()
+        private static string? GetClipboardText()
         {
             try
             {
                 if (!NativeMethods.IsClipboardFormatAvailable(13)) return null;
                 if (!NativeMethods.OpenClipboard(IntPtr.Zero)) return null;
+                
                 string? result = null;
                 IntPtr hGlobal = NativeMethods.GetClipboardData(13);
                 if (hGlobal != IntPtr.Zero)
                 {
                     IntPtr ptr = NativeMethods.GlobalLock(hGlobal);
-                    if (ptr != IntPtr.Zero) { result = Marshal.PtrToStringUni(ptr); NativeMethods.GlobalUnlock(hGlobal); }
+                    if (ptr != IntPtr.Zero) 
+                    { 
+                        result = Marshal.PtrToStringUni(ptr); 
+                        NativeMethods.GlobalUnlock(hGlobal); 
+                    }
                 }
                 NativeMethods.CloseClipboard();
                 return result;
@@ -438,95 +495,102 @@ namespace IMEPali
             catch { return null; }
         }
 
-        private static void ClearWin32()
+        private static void ClearClipboard()
         {
-            try { if (NativeMethods.OpenClipboard(IntPtr.Zero)) { NativeMethods.EmptyClipboard(); NativeMethods.CloseClipboard(); } } catch { }
+            try 
+            { 
+                if (NativeMethods.OpenClipboard(IntPtr.Zero)) 
+                { 
+                    NativeMethods.EmptyClipboard(); 
+                    NativeMethods.CloseClipboard(); 
+                } 
+            } 
+            catch { }
         }
 
-        private static void RestoreClipboardAsync(string? savedText)
+        private static async void RestoreClipboardTextAsync(string? savedText)
         {
-            Task.Run(() => {
-                Thread.Sleep(400);
-                Thread thread = new Thread(() => {
-                    try { if (!string.IsNullOrEmpty(savedText)) Clipboard.SetText(savedText); else Clipboard.Clear(); } catch { }
-                });
-                thread.SetApartmentState(ApartmentState.STA);
-                thread.Start();
+            await Task.Delay(400);
+            
+            Thread staThread = new Thread(() => {
+                try { 
+                    if (!string.IsNullOrEmpty(savedText)) Clipboard.SetText(savedText); 
+                    else Clipboard.Clear(); 
+                } catch { }
             });
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.Start();
         }
     }
     #endregion
 
-    #region [ 메인 폼 (MainForm) 및 트레이 제어 ]
-    internal class MainForm : Form
+    #region [ 6. 메인 트레이 앱 폼 (TrayMainForm) ]
+    /// <summary>
+    /// 애플리케이션의 라이프사이클과 시스템 트레이, UI 업데이트를 담당하는 메인 백그라운드 폼입니다.
+    /// </summary>
+    internal class TrayMainForm : Form
     {
-        public static MainForm? Instance { get; private set; }
+        public static TrayMainForm? Instance { get; private set; }
         
         private NotifyIcon _trayIcon = null!;
         private ContextMenuStrip _trayMenu = null!;
         
-        private TextOverlayForm? _textOverlay;
-        private KeyboardLayoutForm? _kbdLayoutForm;
+        private TextOverlayForm? _overlayForm;
+        private KeyboardLayoutForm? _keyboardForm;
+        
+        private System.Windows.Forms.Timer _imeStatePollingTimer = null!;
+        private bool _isHangulModeActive = false;
 
-        // [이번 수정 부분 시작: 폴링 타이머 및 상태 변수 추가]
-        private System.Windows.Forms.Timer _stateTimer = null!;
-        private bool _lastHangulState = false;
-        // [이번 수정 부분 끝]
-
-        public MainForm()
+        public TrayMainForm()
         {
             Instance = this;
             this.ShowInTaskbar = false;
             this.WindowState = FormWindowState.Minimized;
             this.Hide();
-            _ = this.Handle; // 강제 핸들 생성
+            _ = this.Handle;
 
-            InitializeTray();
-            GlobalInputHook.Start();
+            InitializeTrayUI();
+            KeyboardHookManager.InitializeHook();
 
-            // [이번 수정 부분 시작: 폴링 타이머 시작]
-            _stateTimer = new System.Windows.Forms.Timer { Interval = 100 };
-            _stateTimer.Tick += StateTimer_Tick;
-            _stateTimer.Start();
-            // [이번 수정 부분 끝]
+            _imeStatePollingTimer = new System.Windows.Forms.Timer { Interval = AppConfig.TrayUpdateIntervalMs };
+            _imeStatePollingTimer.Tick += OnImeStateTimerTick;
+            _imeStatePollingTimer.Start();
 
-            // [추가된 부분: 앱 시작 시 트레이 메뉴의 '키보드 배열창' 설정 상태에 따라 창을 표시]
-            UpdateKeyboardLayoutState();
+            UpdateKeyboardLayoutVisibility();
         }
 
-        // [이번 수정 부분 시작: IME 상태 감지 및 타이머 콜백]
-        private void StateTimer_Tick(object? sender, EventArgs e)
+        private void OnImeStateTimerTick(object? sender, EventArgs e)
         {
-            bool currentHangul = CheckHangulMode();
-            if (currentHangul != _lastHangulState)
+            bool isCurrentHangul = DetermineHangulMode();
+            if (isCurrentHangul != _isHangulModeActive)
             {
-                _lastHangulState = currentHangul;
-                UpdateTrayIcon(_lastHangulState);
+                _isHangulModeActive = isCurrentHangul;
+                RefreshTrayIconGraphics(_isHangulModeActive);
             }
         }
 
-        private bool CheckHangulMode()
+        private bool DetermineHangulMode()
         {
-            IntPtr hFore = NativeMethods.GetForegroundWindow();
-            if (hFore == IntPtr.Zero) return false;
+            IntPtr fgWindow = NativeMethods.GetForegroundWindow();
+            if (fgWindow == IntPtr.Zero) return false;
             
-            uint tid = NativeMethods.GetWindowThreadProcessId(hFore, out _);
-            NativeMethods.GUITHREADINFO gti = new() { cbSize = Marshal.SizeOf<NativeMethods.GUITHREADINFO>() };
-            IntPtr focusWnd = hFore;
+            uint threadId = NativeMethods.GetWindowThreadProcessId(fgWindow, out _);
+            NativeMethods.GUITHREADINFO threadInfo = new() { cbSize = Marshal.SizeOf<NativeMethods.GUITHREADINFO>() };
+            IntPtr focusWindow = fgWindow;
             
-            if (NativeMethods.GetGUIThreadInfo(tid, ref gti))
+            if (NativeMethods.GetGUIThreadInfo(threadId, ref threadInfo))
             {
-                if (gti.hwndFocus != IntPtr.Zero) focusWnd = gti.hwndFocus;
-                else if (gti.hwndActive != IntPtr.Zero) focusWnd = gti.hwndActive;
+                if (threadInfo.hwndFocus != IntPtr.Zero) focusWindow = threadInfo.hwndFocus;
+                else if (threadInfo.hwndActive != IntPtr.Zero) focusWindow = threadInfo.hwndActive;
             }
 
-            IntPtr hImeWnd = NativeMethods.ImmGetDefaultIMEWnd(focusWnd);
-            if (hImeWnd == IntPtr.Zero) hImeWnd = NativeMethods.ImmGetDefaultIMEWnd(hFore);
+            IntPtr imeWindow = NativeMethods.ImmGetDefaultIMEWnd(focusWindow);
+            if (imeWindow == IntPtr.Zero) imeWindow = NativeMethods.ImmGetDefaultIMEWnd(fgWindow);
 
-            if (hImeWnd != IntPtr.Zero)
+            if (imeWindow != IntPtr.Zero)
             {
                 NativeMethods.SendMessageTimeout(
-                    hImeWnd, 
+                    imeWindow, 
                     NativeMethods.WM_IME_CONTROL, 
                     (IntPtr)NativeMethods.IMC_GETCONVERSIONMODE, 
                     IntPtr.Zero, 
@@ -534,67 +598,64 @@ namespace IMEPali
                     20, 
                     out IntPtr result);
                 
-                uint mode = (uint)result.ToInt64();
-                return (mode & NativeMethods.IME_CMODE_NATIVE) != 0;
+                return ((uint)result.ToInt64() & NativeMethods.IME_CMODE_NATIVE) != 0;
             }
             return false;
         }
-        // [이번 수정 부분 끝]
 
-        private void InitializeTray()
+        private void InitializeTrayUI()
         {
             _trayMenu = new ContextMenuStrip();
             
-            // [수정된 부분: 첫 번째 메뉴 클릭 시 GitHub 웹페이지로 이동하도록 변경]
-            var titleItem = new ToolStripMenuItem("IMEPali (Pali/Sanskrit)", null, (s, e) => 
+            var titleMenuItem = new ToolStripMenuItem("IMEPali (Pali/Sanskrit)", null, (s, e) => 
             {
                 try
                 {
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                     {
-                        FileName = "https://github.com/stonkim93/IMEPali",
+                        FileName = AppConfig.GithubRepositoryUrl,
                         UseShellExecute = true
                     });
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("웹페이지를 열 수 없습니다.\n" + ex.Message, "IMEPali", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show($"웹페이지를 열 수 없습니다.\n{ex.Message}", "IMEPali 오류", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-            });
-            titleItem.Font = new Font(titleItem.Font, FontStyle.Bold);
-            _trayMenu.Items.Add(titleItem);
+            }) { Font = new Font(this.Font, FontStyle.Bold) };
             
-            // 두 번째 항목("github.com/stonkim93/IMEPali")은 삭제됨
-            
+            _trayMenu.Items.Add(titleMenuItem);
             _trayMenu.Items.Add(new ToolStripMenuItem("한자키로 Pali어 입력/전환") { Enabled = false });
             _trayMenu.Items.Add(new ToolStripSeparator());
 
-            var kbdMenu = new ToolStripMenuItem("Pali어 키보드 배열창", null, (s, e) => {
-                AppConfig.ShowKeyboardLayout = !((ToolStripMenuItem)s!).Checked;
-                ((ToolStripMenuItem)s).Checked = AppConfig.ShowKeyboardLayout;
-                if (!AppConfig.ShowKeyboardLayout) _kbdLayoutForm?.Hide();
-                else UpdateKeyboardLayoutState();
+            var keyboardLayoutMenu = new ToolStripMenuItem("Pali어 키보드 배열창", null, (s, e) => {
+                var menuItem = (ToolStripMenuItem)s!;
+                AppConfig.ShowKeyboardLayout = !menuItem.Checked;
+                menuItem.Checked = AppConfig.ShowKeyboardLayout;
+                
+                if (!AppConfig.ShowKeyboardLayout) _keyboardForm?.Hide();
+                else UpdateKeyboardLayoutVisibility();
             }) { Checked = AppConfig.ShowKeyboardLayout };
-            _trayMenu.Items.Add(kbdMenu);
+            _trayMenu.Items.Add(keyboardLayoutMenu);
 
-            var txtMenu = new ToolStripMenuItem("Pali어 입력문자 표시창", null, (s, e) => {
-                AppConfig.ShowTextOverlay = !((ToolStripMenuItem)s!).Checked;
-                ((ToolStripMenuItem)s).Checked = AppConfig.ShowTextOverlay;
-                if (!AppConfig.ShowTextOverlay) _textOverlay?.Clear();
+            var textOverlayMenu = new ToolStripMenuItem("Pali어 입력문자 표시창", null, (s, e) => {
+                var menuItem = (ToolStripMenuItem)s!;
+                AppConfig.ShowTextOverlay = !menuItem.Checked;
+                menuItem.Checked = AppConfig.ShowTextOverlay;
+                
+                if (!AppConfig.ShowTextOverlay) _overlayForm?.ClearOverlay();
             }) { Checked = AppConfig.ShowTextOverlay };
-            _trayMenu.Items.Add(txtMenu);
+            _trayMenu.Items.Add(textOverlayMenu);
 
             _trayMenu.Items.Add(new ToolStripSeparator());
-            _trayMenu.Items.Add(new ToolStripMenuItem("종료(Exit)", null, (s, e) => Application.Exit()));
+            _trayMenu.Items.Add(new ToolStripMenuItem("종료 (Exit)", null, (s, e) => Application.Exit()));
 
             _trayIcon = new NotifyIcon
             {
                 ContextMenuStrip = _trayMenu,
                 Visible = true,
-                Text = "IMEPali"
+                Text = "IMEPali - Pali Input System"
             };
 
-            // 좌/우 클릭 모두 메뉴 활성화 처리
             _trayIcon.MouseClick += (s, e) =>
             {
                 if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right)
@@ -604,126 +665,123 @@ namespace IMEPali
                 }
             };
             
-            _lastHangulState = CheckHangulMode();
-            UpdateTrayIcon(_lastHangulState);
+            _isHangulModeActive = DetermineHangulMode();
+            RefreshTrayIconGraphics(_isHangulModeActive);
         }
 
-        // [이번 수정 부분 시작: 한/영 상태에 따른 색상 동적 변경 및 Y축 중앙 정렬 보정]
-        private void UpdateTrayIcon(bool isHangul)
+        private void RefreshTrayIconGraphics(bool isHangul)
         {
-            int size = 16;
-            using Bitmap bmp = new Bitmap(size, size);
-            using Graphics g = Graphics.FromImage(bmp);
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            int iconSize = 16;
+            using Bitmap bmp = new Bitmap(iconSize, iconSize);
+            using Graphics graphics = Graphics.FromImage(bmp);
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             
-            g.Clear(Color.Black);
+            graphics.Clear(Color.Black);
+            Color fontColor = isHangul ? Color.White : Color.Orange;
             
-            Color textColor = isHangul ? Color.White : Color.Orange;
-            using Brush tBrush = new SolidBrush(textColor);
+            using Brush textBrush = new SolidBrush(fontColor);
+            StringFormat stringFormat = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             
-            StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            
-            // Y축을 1.5f 픽셀 아래로 내려 시각적으로 완벽한 상하 중앙 정렬을 맞춤
-            g.DrawString("P", new Font("Segoe UI Black", 10, FontStyle.Bold), tBrush, new RectangleF(0, 1.5f, size, size), sf);
+            graphics.DrawString("P", new Font("Segoe UI Black", 10, FontStyle.Bold), textBrush, new RectangleF(0, 1.5f, iconSize, iconSize), stringFormat);
 
             IntPtr hIcon = bmp.GetHicon();
-            Icon? oldIcon = _trayIcon.Icon;
+            Icon? previousIcon = _trayIcon.Icon;
             _trayIcon.Icon = Icon.FromHandle(hIcon);
-            if (oldIcon != null) NativeMethods.DestroyIcon(oldIcon.Handle);
+            if (previousIcon != null) NativeMethods.DestroyIcon(previousIcon.Handle);
         }
-        // [이번 수정 부분 끝]
 
         public void ShowOverlay(string text)
         {
             if (!AppConfig.ShowTextOverlay) return;
+            
             this.Invoke((MethodInvoker)delegate
             {
-                if (_textOverlay == null || _textOverlay.IsDisposed) _textOverlay = new TextOverlayForm();
+                if (_overlayForm == null || _overlayForm.IsDisposed) _overlayForm = new TextOverlayForm();
                 
-                Point caretPos = GetInputCaretPosition();
-                int width = Math.Max(40, text.Length * 15 + 24);
-                int height = 52;
+                Point caretLocation = GetCaretPositionOnScreen();
+                int dynamicWidth = Math.Max(40, text.Length * 15 + 24);
                 
-                _textOverlay.ShowOverlay(text, true, 22f, width, height, caretPos.X, caretPos.Y + 40);
+                _overlayForm.Display(text, true, 22f, dynamicWidth, 52, caretLocation.X, caretLocation.Y + 40);
             });
         }
 
-        private Point GetInputCaretPosition()
+        private Point GetCaretPositionOnScreen()
         {
-            IntPtr hFore = NativeMethods.GetForegroundWindow();
-            uint tid = NativeMethods.GetWindowThreadProcessId(hFore, out _);
-            NativeMethods.GUITHREADINFO gti = new() { cbSize = Marshal.SizeOf<NativeMethods.GUITHREADINFO>() };
-            if (NativeMethods.GetGUIThreadInfo(tid, ref gti) && gti.hwndCaret != IntPtr.Zero)
+            IntPtr fgWindow = NativeMethods.GetForegroundWindow();
+            uint threadId = NativeMethods.GetWindowThreadProcessId(fgWindow, out _);
+            NativeMethods.GUITHREADINFO threadInfo = new() { cbSize = Marshal.SizeOf<NativeMethods.GUITHREADINFO>() };
+            
+            if (NativeMethods.GetGUIThreadInfo(threadId, ref threadInfo) && threadInfo.hwndCaret != IntPtr.Zero)
             {
-                NativeMethods.POINT pt = new() { X = gti.rectLeft, Y = gti.rectBottom };
-                NativeMethods.ClientToScreen(gti.hwndCaret, ref pt);
-                return new Point(pt.X, pt.Y);
+                NativeMethods.POINT point = new() { X = threadInfo.rectLeft, Y = threadInfo.rectBottom };
+                NativeMethods.ClientToScreen(threadInfo.hwndCaret, ref point);
+                return new Point(point.X, point.Y);
             }
-            if (NativeMethods.GetCursorPos(out NativeMethods.POINT mPt)) return new Point(mPt.X, mPt.Y);
+            if (NativeMethods.GetCursorPos(out NativeMethods.POINT mousePoint)) return new Point(mousePoint.X, mousePoint.Y);
+            
             return Point.Empty;
         }
 
-        public void UpdateKeyboardLayoutState()
+        public void UpdateKeyboardLayoutVisibility()
         {
             this.Invoke((MethodInvoker)delegate
             {
                 if (!AppConfig.ShowKeyboardLayout)
                 {
-                    _kbdLayoutForm?.Hide();
+                    _keyboardForm?.Hide();
                     return;
                 }
                 
-                // Caps Lock 키에만 반응하여 Key1, Key2를 판단하도록 변경
-                bool capsOn = (NativeMethods.GetKeyState(0x14) & 1) != 0;
-                bool showKey2 = capsOn;
+                bool isCapsOn = (NativeMethods.GetKeyState(0x14) & 1) != 0;
+                string targetImage = isCapsOn ? "IMEPali.images.PaliKey2.png" : "IMEPali.images.PaliKey1.png";
 
-                if (_kbdLayoutForm == null || _kbdLayoutForm.IsDisposed)
+                if (_keyboardForm == null || _keyboardForm.IsDisposed)
                 {
-                    _kbdLayoutForm = new KeyboardLayoutForm();
-                    _kbdLayoutForm.OnLayoutDoubleClicked += (s, e) =>
-                    {
-                        // 배열창 더블클릭 시 시스템 Caps Lock 자체를 토글 (가상 키 전송)
-                        GlobalInputHook.IsSending = true;
-                        var inputs = new NativeMethods.INPUT[]
-                        {
-                            GlobalInputHook.MakeKeyDown(0x14),
-                            GlobalInputHook.MakeKeyUp(0x14)
-                        };
-                        NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
-                        GlobalInputHook.IsSending = false;
-
-                        // UI 업데이트를 위해 딜레이를 두고 다시 호출
-                        Task.Delay(50).ContinueWith(_ => UpdateKeyboardLayoutState());
-                    };
-                    _kbdLayoutForm.OnClosedByUser += (s, e) =>
+                    _keyboardForm = new KeyboardLayoutForm();
+                    _keyboardForm.OnLayoutDoubleClicked += (s, e) => ToggleSystemCapsLock();
+                    _keyboardForm.OnClosedByUser += (s, e) =>
                     {
                         AppConfig.ShowKeyboardLayout = false;
                         foreach (ToolStripItem item in _trayMenu.Items)
+                        {
                             if (item.Text == "Pali어 키보드 배열창") ((ToolStripMenuItem)item).Checked = false;
+                        }
                     };
                 }
                 
-                _kbdLayoutForm.UpdateImage(showKey2 ? "IMEPali.images.PaliKey2.png" : "IMEPali.images.PaliKey1.png");
+                _keyboardForm.RenderImage(targetImage);
                 
-                if (!_kbdLayoutForm.Visible)
+                if (!_keyboardForm.Visible)
                 {
-                    _kbdLayoutForm.Show();
-                    if (_kbdLayoutForm.WindowState == FormWindowState.Minimized)
-                        _kbdLayoutForm.WindowState = FormWindowState.Normal;
+                    _keyboardForm.Show();
+                    if (_keyboardForm.WindowState == FormWindowState.Minimized) _keyboardForm.WindowState = FormWindowState.Normal;
                 }
             });
         }
+        
+        private void ToggleSystemCapsLock()
+        {
+            KeyboardHookManager.IsSendingInput = true;
+            var inputs = new NativeMethods.INPUT[]
+            {
+                KeyboardHookManager.CreateKeyInput(0x14, false),
+                KeyboardHookManager.CreateKeyInput(0x14, true)
+            };
+            NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
+            KeyboardHookManager.IsSendingInput = false;
+
+            Task.Delay(50).ContinueWith(_ => UpdateKeyboardLayoutVisibility());
+        }
 
         protected override void SetVisibleCore(bool value) => base.SetVisibleCore(false);
+        
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // [이번 수정 부분 시작: 타이머 정리 추가]
-            _stateTimer?.Stop();
-            _stateTimer?.Dispose();
-            // [이번 수정 부분 끝]
+            _imeStatePollingTimer?.Stop();
+            _imeStatePollingTimer?.Dispose();
             
-            GlobalInputHook.Stop();
+            KeyboardHookManager.ReleaseHook();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             base.OnFormClosing(e);
@@ -731,13 +789,13 @@ namespace IMEPali
     }
     #endregion
 
-    #region [ 자판 배열창 및 텍스트 오버레이 폼 ]
+    #region [ 7. UI 구성 요소: 배열창 및 오버레이 폼 ]
     public class KeyboardLayoutForm : Form
     {
         private readonly PictureBox _pictureBox;
         public event EventHandler? OnLayoutDoubleClicked;
         public event EventHandler? OnClosedByUser;
-        private string _currentImageName = "";
+        private string _activeResourceName = "";
 
         protected override CreateParams CreateParams
         {
@@ -768,8 +826,7 @@ namespace IMEPali
 
             try 
             { 
-                var assembly = typeof(Program).Assembly;
-                using Stream? stream = assembly.GetManifestResourceStream("IMEPali.images.IMEPali.ico");
+                using Stream? stream = typeof(Program).Assembly.GetManifestResourceStream("IMEPali.images.IMEPali.ico");
                 if (stream != null) this.Icon = new Icon(stream);
             } catch { }
 
@@ -783,10 +840,10 @@ namespace IMEPali
             this.Controls.Add(_pictureBox);
         }
 
-        public void UpdateImage(string resourceName)
+        public void RenderImage(string resourceName)
         {
-            if (_currentImageName == resourceName) return;
-            _currentImageName = resourceName;
+            if (_activeResourceName == resourceName) return;
+            _activeResourceName = resourceName;
 
             try
             {
@@ -820,9 +877,9 @@ namespace IMEPali
 
     public class TextOverlayForm : Form
     {
-        private readonly System.Windows.Forms.Timer _hideTimer;
-        private string _text = "";
-        private float _fontSize = 22f;
+        private readonly System.Windows.Forms.Timer _visibilityTimer;
+        private string _displayText = "";
+        private float _fontSizePt = 22f;
 
         protected override CreateParams CreateParams
         {
@@ -846,45 +903,48 @@ namespace IMEPali
             this.TopMost = true;
             this.ShowInTaskbar = false;
 
-            _hideTimer = new System.Windows.Forms.Timer { Interval = 1500 };
-            _hideTimer.Tick += (s, e) => this.Hide();
+            _visibilityTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+            _visibilityTimer.Tick += (s, e) => this.Hide();
             
-            this.Paint += TextOverlayForm_Paint;
+            this.Paint += OnFormPaint;
         }
 
-        public void ShowOverlay(string text, bool useTimer, float fontSize, int width, int height, int x, int y)
+        public void Display(string text, bool autoHide, float fontSize, int width, int height, int locX, int locY)
         {
-            _text = text;
-            _fontSize = fontSize;
+            _displayText = text;
+            _fontSizePt = fontSize;
             this.Size = new Size(width, height);
-            this.Location = new Point(x, y);
+            this.Location = new Point(locX, locY);
             
-            if (useTimer) { _hideTimer.Stop(); _hideTimer.Start(); }
-            else _hideTimer.Stop();
+            if (autoHide) 
+            { 
+                _visibilityTimer.Stop(); 
+                _visibilityTimer.Start(); 
+            }
+            else _visibilityTimer.Stop();
             
             if (!this.Visible) this.Show(); 
             this.Invalidate();
         }
 
-        private void TextOverlayForm_Paint(object? sender, PaintEventArgs e)
+        private void OnFormPaint(object? sender, PaintEventArgs e)
         {
-            using Font f = new Font("Malgun Gothic", _fontSize, FontStyle.Bold, GraphicsUnit.Pixel);
-            TextRenderer.DrawText(e.Graphics, _text, f, this.ClientRectangle, Color.Orange, Color.Black, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            using Font f = new Font("Malgun Gothic", _fontSizePt, FontStyle.Bold, GraphicsUnit.Pixel);
+            TextRenderer.DrawText(e.Graphics, _displayText, f, this.ClientRectangle, Color.Orange, Color.Black, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         
-        public void Clear()
+        public void ClearOverlay()
         {
-            _hideTimer.Stop();
+            _visibilityTimer.Stop();
             this.Hide();
         }
     }
     #endregion
 
-    #region [ NativeMethods ]
+    #region [ 8. NativeMethods (Win32 API P/Invoke) ]
     internal static class NativeMethods
     {
         public const int WH_KEYBOARD_LL = 13;
-        public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         public delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
 
@@ -922,33 +982,30 @@ namespace IMEPali
         public static void SendUnicodeString(string text)
         {
             var inputs = new List<INPUT>();
-            bool shiftHeld = (GetAsyncKeyState(0x10) & 0x8000) != 0;
+            bool isShiftHeld = (GetAsyncKeyState(0x10) & 0x8000) != 0;
             
-            if (shiftHeld) inputs.Add(GlobalInputHook.MakeKeyUp(0x10));
+            if (isShiftHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x10, true));
             
             foreach (char c in text)
             {
-                inputs.Add(new INPUT { type = 1, U = new InputUnion { ki = new KEYBDINPUT { wVk = 0, wScan = c, dwFlags = 0x0004 } } }); // KEYEVENTF_UNICODE
-                inputs.Add(new INPUT { type = 1, U = new InputUnion { ki = new KEYBDINPUT { wVk = 0, wScan = c, dwFlags = 0x0004 | 0x0002 } } }); // KEYUP
+                inputs.Add(new INPUT { type = 1, U = new InputUnion { ki = new KEYBDINPUT { wVk = 0, wScan = c, dwFlags = 0x0004 } } });
+                inputs.Add(new INPUT { type = 1, U = new InputUnion { ki = new KEYBDINPUT { wVk = 0, wScan = c, dwFlags = 0x0004 | 0x0002 } } });
             }
-            
-            // 대문자 입력 시 Shift 키가 1회만 눌린 것으로 인식되도록 Shift 재활성화 코드 제거
             
             SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<INPUT>());
         }
 
         [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT lpPoint);
         [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
-        [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-        [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-        [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
         [DllImport("user32.dll", SetLastError = true)] public static extern bool DestroyIcon(IntPtr hIcon);
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); 
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
         [DllImport("user32.dll")] public static extern bool GetGUIThreadInfo(uint idThread, ref GUITHREADINFO lpgui);
         [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT lpPoint);
-        [StructLayout(LayoutKind.Sequential)] public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public int rectLeft; public int rectTop; public int rectRight; public int rectBottom; }
+        
+        [StructLayout(LayoutKind.Sequential)] 
+        public struct GUITHREADINFO { public int cbSize; public int flags; public IntPtr hwndActive; public IntPtr hwndFocus; public IntPtr hwndCapture; public IntPtr hwndMenuOwner; public IntPtr hwndMoveSize; public IntPtr hwndCaret; public int rectLeft; public int rectTop; public int rectRight; public int rectBottom; }
 
         [DllImport("user32.dll")] public static extern bool OpenClipboard(IntPtr hWndNewOwner);
         [DllImport("user32.dll")] public static extern bool CloseClipboard();
@@ -958,18 +1015,13 @@ namespace IMEPali
         [DllImport("kernel32.dll")] public static extern IntPtr GlobalLock(IntPtr hMem);
         [DllImport("kernel32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GlobalUnlock(IntPtr hMem);
 
-        // [이번 수정 부분 시작: IME 감지 API 정의 추가]
-        [DllImport("imm32.dll")] 
-        public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
-        
-        [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW")] 
-        public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+        [DllImport("imm32.dll")] public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);
+        [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW")] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
 
         public const int WM_IME_CONTROL = 0x0283;
         public const int IMC_GETCONVERSIONMODE = 0x0001;
         public const uint IME_CMODE_NATIVE = 0x0001;
         public const uint SMTO_ABORTIFHUNG = 0x0002;
-        // [이번 수정 부분 끝]
     }
     #endregion
 }
