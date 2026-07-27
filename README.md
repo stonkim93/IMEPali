@@ -89,7 +89,7 @@
 
 ## 💡 Pali어 / Sanskrit 키보드 설치 및 사용팁 (Tips)
 
-### 1️⃣ 한글CAPS Pali_Sanskrit 사용 (IMEPali 앱 제공 수정 Pali 자판)
+### 1️⃣ Pali_Sanskrit 사용 (IMEPali 앱 제공 수정 Pali 자판)
 
 1. Pali-Sanskrit(Unicode) 키보드 IME 설치 불필요.
 

@@ -42,8 +42,9 @@ namespace IMEPali
         static void Main()
         {
             // IMEPointer 및 IMEPali 중복 실행 방지
-            using Mutex mutexPointer = new Mutex(true, "IMEPointer_SingleInstance", out bool isPointerFirst);
-            using Mutex mutexPali = new Mutex(true, "IMEPali_SingleInstance", out bool isPaliFirst);
+            // MS Store 패키징(AppContainer) 환경을 고려하여 Global\ 접두사 추가
+            using Mutex mutexPointer = new Mutex(true, @"Global\IMEPointer_SingleInstance", out bool isPointerFirst);
+            using Mutex mutexPali = new Mutex(true, @"Global\IMEPali_SingleInstance", out bool isPaliFirst);
 
             if (!isPointerFirst || !isPaliFirst)
             {
@@ -209,8 +210,12 @@ namespace IMEPali
         public static void InitializeHook()
         {
             using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
-            using var curModule = curProcess.MainModule;
-            _hookID = NativeMethods.SetWindowsHookEx(NativeMethods.WH_KEYBOARD_LL, _hookProcedure, NativeMethods.GetModuleHandle(curModule!.ModuleName), 0);
+            // PublishSingleFile=true 환경에서 GetModuleHandle 호환성을 위해 null 전달 (현재 프로세스 기준)
+            _hookID = NativeMethods.SetWindowsHookEx(
+                NativeMethods.WH_KEYBOARD_LL, 
+                _hookProcedure, 
+                NativeMethods.GetModuleHandle(null), 
+                0);
         }
 
         public static void ReleaseHook()
@@ -362,7 +367,8 @@ namespace IMEPali
             if (IsProcessing) return;
             IsProcessing = true;
             
-            Task.Run(() =>
+            // UI Automation 및 Clipboard API는 STA 스레드에서 실행되어야 함
+            Thread workerThread = new Thread(() =>
             {
                 try
                 {
@@ -373,7 +379,9 @@ namespace IMEPali
                         string transformed = transformationFunc(selectedText);
                         if (transformed != selectedText)
                         {
-                            TrayMainForm.Instance?.ShowOverlay($"{selectedText[0]}→{transformed[0]}");
+                            TrayMainForm.Instance?.Invoke((MethodInvoker)delegate {
+                                TrayMainForm.Instance.ShowOverlay($"{selectedText[0]}→{transformed[0]}");
+                            });
                             updateLastCharAction(transformed.Length == 1 ? transformed : "");
                             KeyboardHookManager.SendReplacementText(0, transformed);
                         }
@@ -387,17 +395,25 @@ namespace IMEPali
                         string transformed = transformationFunc(lastOutputChar);
                         if (transformed != lastOutputChar)
                         {
-                            TrayMainForm.Instance?.ShowOverlay($"{lastOutputChar[0]}→{transformed[0]}");
+                            TrayMainForm.Instance?.Invoke((MethodInvoker)delegate {
+                                TrayMainForm.Instance.ShowOverlay($"{lastOutputChar[0]}→{transformed[0]}");
+                            });
                             updateLastCharAction(transformed);
                             KeyboardHookManager.SendReplacementText(1, transformed);
                         }
                     }
                 }
-                catch { }
+                catch (Exception) 
+                { 
+                    // 로깅 로직 추가 권장 (예: Debug.WriteLine)
+                }
                 finally { IsProcessing = false; }
             });
-        }
 
+            workerThread.SetApartmentState(ApartmentState.STA); // 필수 설정
+            workerThread.Start();
+        }
+        
         private static string? ReadSelectedText(out bool isUiaRetrieved)
         {
             isUiaRetrieved = false;
@@ -959,7 +975,7 @@ namespace IMEPali
         public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        public static extern IntPtr GetModuleHandle(string lpModuleName);
+        public static extern IntPtr GetModuleHandle(string? lpModuleName);
 
         [DllImport("user32.dll")]
         public static extern short GetKeyState(int nVirtKey);
