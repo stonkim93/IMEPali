@@ -231,11 +231,23 @@ namespace IMEPali
         {
             try
             {
-                if (nCode >= 0 && !IsSendingInput)
+                if (nCode >= 0)
                 {
                     int virtualKeyCode = Marshal.ReadInt32(lParam);
-                    bool isKeyDown = (wParam == (IntPtr)0x0100 || wParam == (IntPtr)0x0104);
                     bool isKeyUp = (wParam == (IntPtr)0x0101 || wParam == (IntPtr)0x0105);
+
+                    // 앱이 스스로 입력을 발생시키는 중이라도, 토글키를 뗐다면 상태를 반드시 초기화하여 갇힘(Stuck) 방지
+                    if (IsSendingInput)
+                    {
+                        if (isKeyUp && AppConfig.ToggleKeyCodes.Contains(virtualKeyCode))
+                        {
+                            _isToggleKeyDown = false;
+                        }
+                        return NativeMethods.CallNextHookEx(_hookID, nCode, wParam, lParam);
+                    }
+
+                    // 이후 기존 로직 유지
+                    bool isKeyDown = (wParam == (IntPtr)0x0100 || wParam == (IntPtr)0x0104);
 
                     // 지정된 Toggle 키 (한자키, RCtrl) 인지 확인
                     if (AppConfig.ToggleKeyCodes.Contains(virtualKeyCode))
@@ -331,9 +343,20 @@ namespace IMEPali
 
         private static void SendString(string text)
         {
-            IsSendingInput = true;
-            NativeMethods.SendUnicodeString(text);
-            IsSendingInput = false;
+            // 백그라운드 태스크에서 전송하여 글로벌 키보드 후킹 스레드를 블로킹하지 않음
+            Task.Run(async () =>
+            {
+                IsSendingInput = true;
+                
+                // Copilot 키(Win, Shift 등 조합)의 논리적 잔여 신호가 해제될 시간을 줌 (약 30ms)
+                await Task.Delay(30); 
+                
+                NativeMethods.SendUnicodeString(text);
+                
+                // 전송 완료 후 약간의 딜레이를 주어 입력 꼬임 방지
+                await Task.Delay(10);
+                IsSendingInput = false;
+            });
         }
 
         public static NativeMethods.INPUT CreateKeyInput(ushort virtualKey, bool isKeyUp)
