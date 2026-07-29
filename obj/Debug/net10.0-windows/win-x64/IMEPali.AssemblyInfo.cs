@@ -10,10 +10,12 @@
 using System;
 using System.Reflection;
 
-[assembly: System.Reflection.AssemblyCompanyAttribute("IMEPali")]
+[assembly: System.Reflection.AssemblyCompanyAttribute("stonkim93")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
+[assembly: System.Reflection.AssemblyCopyrightAttribute("Copyright (c) 2024 stonkim93")]
+[assembly: System.Reflection.AssemblyDescriptionAttribute("Pali and Sanskrit Input Method Editor for Windows")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e6877f32252081b5ad0154bf8c8eab672a9c9aed")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0.0+f55618c9491c679c61ac9426bc37c09973b7c15b")]
 [assembly: System.Reflection.AssemblyProductAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyTitleAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
