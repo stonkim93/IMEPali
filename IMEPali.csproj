@@ -1,63 +1,64 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- [기존] Windows 버전 명시 -->
-    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <!-- MS Store 빌드 여부 토글 스위치 -->
+    <IsStoreBuild>false</IsStoreBuild>
+
+    <!-- [수정 1] 일반 빌드 시에는 Windows OS 버전을 떼어내어 WinRT SDK 자동 포함을 방지 -->
+    <TargetFramework Condition="'$(IsStoreBuild)' != 'true'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(IsStoreBuild)' == 'true'">net10.0-windows10.0.19041.0</TargetFramework>
+    
     <OutputType>WinExe</OutputType>
     <UseWindowsForms>true</UseWindowsForms>
+    
+    <!-- UI 자동화 API(System.Windows.Automation)를 사용 -->
     <UseWpf>true</UseWpf>
+    
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationIcon>images\IMEPali.ico</ApplicationIcon>
     
-    <!-- [기존] 배포 설정 -->
+    <!-- 배포 설정 -->
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     
-    <!-- [기존] 어셈블리 설정 -->
+    <!-- 어셈블리 설정 -->
     <AssemblyName>IMEPali</AssemblyName>
     <RootNamespace>IMEPali</RootNamespace>
     <NoWarn>$(NoWarn);CA1420</NoWarn>
 
-    <!-- [중요] Microsoft Store MSIX 패키징 활성화 -->
-    <EnableMsixTooling>true</EnableMsixTooling>
+    <!-- Microsoft Store MSIX 패키징 설정 -->
+    <EnableMsixTooling Condition="'$(IsStoreBuild)' == 'true'">true</EnableMsixTooling>
+    <GenerateAppxPackageOnBuild Condition="'$(IsStoreBuild)' == 'true'">false</GenerateAppxPackageOnBuild>
+    <AppxPackageSigningEnabled Condition="'$(IsStoreBuild)' == 'true'">true</AppxPackageSigningEnabled>
     
-    <!-- [추가] MSIX 패키징 세부 설정 -->
-    <GenerateAppxPackageOnBuild>false</GenerateAppxPackageOnBuild>
-    <AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
-    
-    <!-- [추가] 버전 정보 (MS Store 요구사항) -->
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <InformationalVersion>1.0.0.0</InformationalVersion>
-    
-    <!-- [추가] 제품 정보 -->
     <Company>stonkim93</Company>
     <Product>IMEPali</Product>
     <Description>Pali and Sanskrit Input Method Editor for Windows</Description>
     <Copyright>Copyright (c) 2024 stonkim93</Copyright>
   </PropertyGroup>
 
-  <!-- [수정] 아이템 그룹: 매니페스트 및 이미지 -->
+  <!-- 앱 내부 리소스 -->
   <ItemGroup>
-    <!-- [중요] Package.appxmanifest를 AppxManifest로 포함 -->
-    <AppxManifest Include="Package.appxmanifest" />
-
-    <!-- [기존] 앱 내부 리소스 (EmbeddedResource) -->
     <EmbeddedResource Include="images\IMEPali.ico" />
     <EmbeddedResource Include="images\PaliKey1.png" />
     <EmbeddedResource Include="images\PaliKey2.png" />
-    
-    <!-- [중요] MS Store 필수 이미지 (Content로 MSIX 패키지에 포함) -->
+  </ItemGroup>
+
+  <!-- MS Store 필수 파일들 -->
+  <ItemGroup Condition="'$(IsStoreBuild)' == 'true'">
+    <AppxManifest Include="Package.appxmanifest" />
     <Content Include="images\Square44x44Logo.png" />
     <Content Include="images\Square150x150Logo.png" />
     <Content Include="images\StoreLogo.png" />
     <Content Include="images\SplashScreen.png" />
   </ItemGroup>
 
-  <!-- [추가] NuGet 의존성 설정 (필요한 경우) -->
-  <ItemGroup>
-    <!-- Windows Runtime 지원 -->
+  <!-- SDK 참조 -->
+  <ItemGroup Condition="'$(IsStoreBuild)' == 'true'">
     <FrameworkReference Include="Microsoft.Windows.SDK.NET.Ref" />
   </ItemGroup>
 
