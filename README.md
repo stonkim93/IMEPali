@@ -77,21 +77,7 @@
 
 - 선택한 글자를 한자키로 전환기능 사용시 글자의 전환을 표시함
 
-### 4️⃣ 한자키 적용/복원 키맵핑 기능 제공
-
-- 삼성전자 갤럭시북5은 다음과 같이 copilot키를 한자키와 겸용으로 사용한다.
-
-  * 그냥 눌렀을 때: Copilot 실행 매크로 신호 (Win + Shift + F23)
-
-  * Fn + 눌렀을 때: 한자키 신호 (IME Kanji)
-
-- Sharpkeys 앱을 사용하면 다음의 키맵핑으로 Registry를 수정하여 한자키를 사용할 수 있다.
-
-  * 기존 Copilot 키 선택: "Function : F23 (00_6E)"
-
-  * 한자키로 키맵핑 : "Unknown: 0xE071 (E0_71)"
-
-- 이 앱의 트레이 메뉴에서 한자키 적용/복원 키맵핑 기능을 제공한다.
+### 4️⃣ 삼성전자 갤럭시북5 Copilot키의 한자키 적용/복원 키맵핑 기능 제공
 
 ### 5️⃣ 트레이 아이콘 **클릭**하여 메뉴 선택하고, 옵션 On/Off
 
@@ -191,7 +177,77 @@
 
 </div>
 
-### 4️⃣ 아래한글에서 윈도우 MS IME 사용하기
+### 4️⃣ 안드로이드 스마트폰에서 Pali어 입력하기
+
+**1. 삼성 키보드: 굿락(Good Lock) 'Keys Cafe' 활용 (가장 추천)**
+
+- Galaxy Store에서 Good Lock 설치 후 Keys Cafe 모듈 다운로드
+
+- 나만의 키보드 만들기 메뉴 진입, 기존에 사용하던 영문 QWERTY 레이아웃 선택 및 편집 모드 진입
+
+- 각 알파벳 키(a, i, u, m, n, t, d, l)의 길게 누르기(어깨글자/팝업) 레이아웃에 Pali어 기호(ā, ī, ū, ṁ, ṅ, ñ, ṭ, ḍ, ṇ, ḷ)를 지정
+
+- 원하는 위치에 팔리어 전용 특수문자 키를 아예 독립된 단독 버튼으로 배치하는 것도 가능
+
+
+[key_cafe_EngPali1.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali1.kcf)
+
+<div align="center">
+
+![alt text](images/keys_cafe_EngPali1.jpg)
+
+</div>
+
+[key_cafe_EngPali2.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali2.kcf)
+
+
+<div align="center">
+
+![alt text](images/keys_cafe_EngPali2.jpg)
+
+</div>
+
+[key_cafe_EngPali3.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali3.kcf)
+
+<div align="center">
+
+![alt text](images/keys_cafe_EngPali2.jpg)
+
+</div>
+
+**2. Gboard (구글 키보드): 개인 사전(단축키) 및 언어 설정**
+
+- 개인 사전(Personal Dictionary) 단축어 활용 방법 : Gboard 설정 > 사전 > 개인 사전 > 영어 선택후, + 버튼을 눌러 Pali어 문자와 치환 단축어 등록
+
+- 영문 자판 기본 롱프레스 활용 방법 : a, i, u 키를 길게 누르면 기본 알파벳 모음 장음(ā, ī, ū) 및 ñ이 기본 팝업으로 제공
+
+**3. 네이버 스마트보드: 자주 쓰는 문구 / 기호 바 커스텀**
+
+- 네이버 스마트보드 설정 > 기본 > 자주 쓰는 문구 항목 선택
+
+- 자주 사용하는 팔리어 문자를 목록에 추가 (ā, ī, ū, ṁ, ṅ, ñ, ṭ, ḍ, ṇ, ḷ)
+
+- 키보드 상단 툴바에 자주 쓰는 문구 아이콘을 배치하면, 클릭 한 번으로 팔리어 기호 모음 패널을 열어 입력 가능
+
+- 또는 단축키 기능을 사용해 a. 입력 시 ā로 자동 변환되도록 설정
+
+### 5️⃣ 한자키 적용/복원 키맵핑 기능 제공
+
+- 삼성전자 갤럭시북5은 다음과 같이 copilot키를 한자키와 겸용으로 사용한다.
+
+  * 그냥 눌렀을 때: Copilot 실행 매크로 신호 (Win + Shift + F23)
+
+  * Fn + 눌렀을 때: 한자키 신호 (IME Kanji)
+
+- Sharpkeys 앱을 사용하면 다음의 키맵핑으로 Registry를 수정하여 한자키를 사용할 수 있다.
+
+  * 기존 Copilot 키 선택: "Function : F23 (00_6E)"
+
+  * 한자키로 키맵핑 : "Unknown: 0xE071 (E0_71)"
+
+- 이 앱의 트레이 메뉴에서 한자키 적용/복원 키맵핑 기능을 제공한다.
+
+### 6️⃣ 아래한글에서 윈도우 MS IME 사용하기
 
 > 📌 [TIP]
 > 한글과컴퓨터의 자체 입력기 대신 Microsoft IME를 사용하도록 전환하면, 아래한글에서도 IMEPali가 입력 상태를 정확히 표시합니다.
@@ -204,7 +260,7 @@
 
 * 트레이 아이콘을 클릭하여 **엑셀/한글 작은원 표시**가 체크되면, 입력 상태를 시각적으로 구분하기 쉬움
 
-### 5️⃣ 윈도우 시작 프로그램에 추가하기
+### 7️⃣ 윈도우 시작 프로그램에 추가하기
 
 * 윈도우 실행창(run)을 띄운다 : <kbd>WIN</kbd> + <kbd>R</kbd>
 
@@ -215,7 +271,7 @@
 * IMEPali 실행 후 숨겨진 아이콘 박스에 포함된 경우, 작업표시줄로 끄집어내어 MS IME 옆에 놓으면 시각적으로 도움이 된다
 
 
-### 6️⃣ 한글자음+한자키 특수기호 입력하기
+### 7️⃣ 한글자음+한자키 특수기호 입력하기
 
 - ㄱ + 한자키 : 문장 부호 (', ", ·, ㆍ 등)
 

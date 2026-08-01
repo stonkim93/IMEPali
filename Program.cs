@@ -46,11 +46,9 @@ namespace IMEPali
             // IMEPointer, IMCPointer, IMEJapanese 및 IMEPali 중복 실행 방지
             // MS Store 패키징(AppContainer) 환경을 고려하여 Global\ 접두사 추가
             using Mutex mutexPointer = new Mutex(true, @"Global\IMEPointer_SingleInstance", out bool isPointerFirst);
-            using Mutex mutexCPointer = new Mutex(true, @"Global\IMCPointer_SingleInstance", out bool isCPointerFirst);
-            using Mutex mutexJapanese = new Mutex(true, @"Global\IMEJapanese_SingleInstance", out bool isJapaneseFirst);
             using Mutex mutexPali = new Mutex(true, @"Global\IMEPali_SingleInstance", out bool isPaliFirst);
 
-            if (!isPointerFirst || !isCPointerFirst || !isJapaneseFirst || !isPaliFirst)
+            if (!isPointerFirst || !isPaliFirst)
             {
                 MessageBox.Show("IMEPali 앱이 이미 실행 중입니다.", "IMEPali", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;

@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- MS Store 빌드 여부 토글 스위치 -->
-    <IsStoreBuild>true</IsStoreBuild>
+    <IsStoreBuild>false</IsStoreBuild>
 
     <!-- [수정 1] 일반 빌드 시에는 Windows OS 버전을 떼어내어 WinRT SDK 자동 포함을 방지 -->
     <TargetFramework Condition="'$(IsStoreBuild)' != 'true'">net10.0-windows</TargetFramework>
