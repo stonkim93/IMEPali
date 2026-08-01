@@ -190,11 +190,11 @@
 - 숫자키 배열처럼 Pali어 특수문자 키들을 배치하는 것도 가능 [EngPali1, EngPali2]
 
 
-[key_cafe_EngPali1.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali1.kcf) : 숫자열 아래에 Pali어 전용키 10자 배치 (대문자는 Long Press)
+* [key_cafe_EngPali1.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali1.kcf) : 숫자열 아래에 Pali어 전용키 10자 배치 (대문자는 Long Press)
 
-[key_cafe_EngPali2.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali2.kcf) : 숫자열 제외하고 위쪽에 Pali어 전용키 10자 배치 (대문자는 Long Press)
+* [key_cafe_EngPali2.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali2.kcf) : 숫자열 제외하고 위쪽에 Pali어 전용키 10자 배치 (대문자는 Long Press)
 
-[key_cafe_EngPali3.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali3.kcf) : Pali어 전용키 없이 영어키 Long Press로 Pali어 소문자/대문자 입력
+* [key_cafe_EngPali3.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali3.kcf) : Pali어 전용키 없이 영어키 Long Press로 Pali어 소문자/대문자 입력
 
 <div align="center">
 
