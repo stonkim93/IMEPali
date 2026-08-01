@@ -185,16 +185,16 @@
 
 - 나만의 키보드 만들기 메뉴 진입, 기존에 사용하던 영문 QWERTY 레이아웃 선택 및 편집 모드 진입
 
-- 각 알파벳 키(a, i, u, m, n, t, d, l)의 길게 누르기(어깨글자/팝업) 레이아웃에 Pali어 기호(ā, ī, ū, ṁ, ṅ, ñ, ṭ, ḍ, ṇ, ḷ)를 지정
+- 각 알파벳 키(a, i, u, d, t, l, n, m) 길게 누르기(팝업) 레이아웃에 Pali어 기호(ā, ī, ū, ḍ, ṭ, ḷ, ṅ, ṇ, ñ, ṃ)를 지정 [EngPali1, EngPali2, EngPali3]
 
-- 원하는 위치에 팔리어 전용 특수문자 키를 아예 독립된 단독 버튼으로 배치하는 것도 가능
+- 숫자키 배열처럼 Pali어 특수문자 키들을 배치하는 것도 가능 [EngPali1, EngPali2]
 
 
-[key_cafe_EngPali1.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali1.kcf)
+[key_cafe_EngPali1.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali1.kcf) : 숫자열 아래에 Pali어 전용키 10자 배치 (대문자는 Long Press)
 
-[key_cafe_EngPali2.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali2.kcf)
+[key_cafe_EngPali2.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali2.kcf) : 숫자열 제외하고 위쪽에 Pali어 전용키 10자 배치 (대문자는 Long Press)
 
-[key_cafe_EngPali3.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali3.kcf)
+[key_cafe_EngPali3.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali3.kcf) : Pali어 전용키 없이 영어키 Long Press로 Pali어 소문자/대문자 입력
 
 <div align="center">
 
