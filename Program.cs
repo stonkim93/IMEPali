@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Forms;
 using System.Linq;
+using Microsoft.Win32;
+using System.Security.Principal;
 
 namespace IMEPali
 {
@@ -41,12 +43,14 @@ namespace IMEPali
         [STAThread]
         static void Main()
         {
-            // IMEPointer 및 IMEPali 중복 실행 방지
+            // IMEPointer, IMCPointer, IMEJapanese 및 IMEPali 중복 실행 방지
             // MS Store 패키징(AppContainer) 환경을 고려하여 Global\ 접두사 추가
             using Mutex mutexPointer = new Mutex(true, @"Global\IMEPointer_SingleInstance", out bool isPointerFirst);
+            using Mutex mutexCPointer = new Mutex(true, @"Global\IMCPointer_SingleInstance", out bool isCPointerFirst);
+            using Mutex mutexJapanese = new Mutex(true, @"Global\IMEJapanese_SingleInstance", out bool isJapaneseFirst);
             using Mutex mutexPali = new Mutex(true, @"Global\IMEPali_SingleInstance", out bool isPaliFirst);
 
-            if (!isPointerFirst || !isPaliFirst)
+            if (!isPointerFirst || !isCPointerFirst || !isJapaneseFirst || !isPaliFirst)
             {
                 MessageBox.Show("IMEPali 앱이 이미 실행 중입니다.", "IMEPali", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -279,7 +283,10 @@ namespace IMEPali
                         else if (_isToggleKeyDown)
                         {
                             _toggleKeyUsedForTyping = true;
+                            // [수정] Copilot 매크로 (Win+Shift+F23) 방어 로직
+                            bool isLWinDown = (NativeMethods.GetAsyncKeyState(0x5B) & 0x8000) != 0;
                             bool isShiftDown = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+                            if (isLWinDown) isShiftDown = false; // Copilot 억지 Shift 끄기                            
                             bool isCapsOn = (NativeMethods.GetKeyState(0x14) & 0x0001) != 0;
                             bool isUpperCase = isShiftDown ^ isCapsOn;
 
@@ -294,7 +301,11 @@ namespace IMEPali
                         {
                             if (virtualKeyCode >= 0x41 && virtualKeyCode <= 0x5A) // A~Z
                             {
+                                // [수정] 동일한 방어 로직 적용
+                                bool isLWinDown = (NativeMethods.GetAsyncKeyState(0x5B) & 0x8000) != 0;
                                 bool isShiftDown = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+                                if (isLWinDown) isShiftDown = false;
+
                                 bool isCapsOn = (NativeMethods.GetKeyState(0x14) & 0x0001) != 0;
                                 bool isUpperCase = isShiftDown ^ isCapsOn;
                                 char c = isUpperCase ? (char)virtualKeyCode : (char)(virtualKeyCode + 32);
@@ -324,8 +335,12 @@ namespace IMEPali
         {
             IsSendingInput = true;
             var inputList = new List<NativeMethods.INPUT>();
+
+            // [수정] Copilot 매크로의 찌꺼기 수식키(Win, Shift)를 강제로 해제
+            bool isLWinHeld = (NativeMethods.GetAsyncKeyState(0x5B) & 0x8000) != 0;
             bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
             
+            if (isLWinHeld) inputList.Add(CreateKeyInput(0x5B, true));            
             if (isShiftHeld) inputList.Add(CreateKeyInput(0x10, true));
             
             for (int i = 0; i < backspaces; i++)
@@ -334,8 +349,11 @@ namespace IMEPali
                 inputList.Add(CreateKeyInput(0x08, true));  
             }
             
-            NativeMethods.SendInput((uint)inputList.Count, inputList.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
-            
+            if (inputList.Count > 0)
+            {
+                NativeMethods.SendInput((uint)inputList.Count, inputList.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
+            }
+
             if (text.Length > 0) NativeMethods.SendUnicodeString(text);
             
             IsSendingInput = false;
@@ -395,6 +413,9 @@ namespace IMEPali
             {
                 try
                 {
+                    // [수정] Copilot 매크로(Win+Shift+F23) 물리적/논리적 해제 지연을 기다림
+                    Thread.Sleep(50); 
+
                     string? selectedText = ReadSelectedText(out bool isUiaRetrieved);
                     
                     if (!string.IsNullOrEmpty(selectedText))
@@ -459,12 +480,12 @@ namespace IMEPali
             }
             catch { }
 
-            bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+            // bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
             string? backupClipboardText = GetClipboardText();
             try
             {
                 ClearClipboard();
-                SendCtrlC(isShiftHeld);
+                SendCtrlC();
                 string? copiedText = null;
                 
                 for (int i = 0; i < 20; i++)
@@ -480,19 +501,21 @@ namespace IMEPali
             catch { return null; }
         }
 
-        private static void SendCtrlC(bool isShiftHeld)
+        private static void SendCtrlC()
         {
             KeyboardHookManager.IsSendingInput = true;
             var inputs = new List<NativeMethods.INPUT>();
             
+            // [수정] 수식키 강제 해제
+            bool isLWinHeld = (NativeMethods.GetAsyncKeyState(0x5B) & 0x8000) != 0;
+            bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+            if (isLWinHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x5B, true));
             if (isShiftHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x10, true));
             
             inputs.Add(KeyboardHookManager.CreateKeyInput(0x11, false));
             inputs.Add(KeyboardHookManager.CreateKeyInput(0x43, false));
             inputs.Add(KeyboardHookManager.CreateKeyInput(0x43, true));
             inputs.Add(KeyboardHookManager.CreateKeyInput(0x11, true));
-            
-            if (isShiftHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x10, false));
             
             NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
             KeyboardHookManager.IsSendingInput = false;
@@ -501,12 +524,18 @@ namespace IMEPali
         private static void CancelTextSelection()
         {
             KeyboardHookManager.IsSendingInput = true;
-            var inputs = new NativeMethods.INPUT[]
-            {
-                KeyboardHookManager.CreateKeyInput(0x27, false),
-                KeyboardHookManager.CreateKeyInput(0x27, true)
-            };
-            NativeMethods.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
+            var inputs = new List<NativeMethods.INPUT>();
+
+            // [수정] 수식키 강제 해제
+            bool isLWinHeld = (NativeMethods.GetAsyncKeyState(0x5B) & 0x8000) != 0;
+            bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
+            if (isLWinHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x5B, true));
+            if (isShiftHeld) inputs.Add(KeyboardHookManager.CreateKeyInput(0x10, true));
+
+            inputs.Add(KeyboardHookManager.CreateKeyInput(0x27, false));
+            inputs.Add(KeyboardHookManager.CreateKeyInput(0x27, true));
+            
+            NativeMethods.SendInput((uint)inputs.Count, inputs.ToArray(), Marshal.SizeOf<NativeMethods.INPUT>());
             KeyboardHookManager.IsSendingInput = false;
         }
 
@@ -563,7 +592,132 @@ namespace IMEPali
     }
     #endregion
 
-    #region [ 6. 메인 트레이 앱 폼 (TrayMainForm) ]
+    #region [ 6. 레지스트리 키맵핑 도구 (RegistryHelper) ]
+    internal static class RegistryHelper
+    {
+        private const string RegPath = @"SYSTEM\CurrentControlSet\Control\Keyboard Layout";
+        private const string RegValue = "Scancode Map";
+        private static readonly byte[] MappingBytes = { 0x71, 0xE0, 0x6E, 0x00 };
+
+        public static bool IsAdmin()
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var principal = new WindowsPrincipal(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+
+        public static bool IsMappingApplied()
+        {
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(RegPath, false);
+                if (key?.GetValue(RegValue) is byte[] data && data.Length >= 20)
+                {
+                    int count = BitConverter.ToInt32(data, 8);
+                    for (int i = 0; i < count - 1; i++)
+                    {
+                        int offset = 12 + (i * 4);
+                        if (offset + 4 <= data.Length)
+                        {
+                            if (data[offset] == MappingBytes[0] && data[offset + 1] == MappingBytes[1] &&
+                                data[offset + 2] == MappingBytes[2] && data[offset + 3] == MappingBytes[3])
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+            catch { return false; }
+        }
+
+        public static bool ToggleMapping(bool apply)
+        {
+            if (!IsAdmin())
+            {
+                MessageBox.Show("레지스트리 수정을 위해 앱을 '관리자 권한'으로 실행해주세요.", "권한 필요", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(RegPath, true);
+                if (key == null) return false;
+
+                byte[]? currentData = key.GetValue(RegValue) as byte[];
+
+                if (apply)
+                {
+                    if (IsMappingApplied()) return true;
+
+                    byte[] newData;
+                    if (currentData == null || currentData.Length < 20)
+                    {
+                        newData = new byte[20];
+                        Array.Clear(newData, 0, 8);
+                        BitConverter.GetBytes(2).CopyTo(newData, 8);
+                        MappingBytes.CopyTo(newData, 12);
+                        Array.Clear(newData, 16, 4);
+                    }
+                    else
+                    {
+                        int oldCount = BitConverter.ToInt32(currentData, 8);
+                        newData = new byte[currentData.Length + 4];
+                        Array.Copy(currentData, 0, newData, 0, 8);
+                        BitConverter.GetBytes(oldCount + 1).CopyTo(newData, 8);
+                        Array.Copy(currentData, 12, newData, 12, currentData.Length - 16);
+                        MappingBytes.CopyTo(newData, currentData.Length - 4);
+                        Array.Clear(newData, newData.Length - 4, 4);
+                    }
+                    key.SetValue(RegValue, newData, RegistryValueKind.Binary);
+                }
+                else
+                {
+                    if (!IsMappingApplied() || currentData == null) return true;
+
+                    int oldCount = BitConverter.ToInt32(currentData, 8);
+                    if (oldCount <= 2)
+                    {
+                        key.DeleteValue(RegValue, false);
+                    }
+                    else
+                    {
+                        byte[] newData = new byte[currentData.Length - 4];
+                        Array.Copy(currentData, 0, newData, 0, 8);
+                        BitConverter.GetBytes(oldCount - 1).CopyTo(newData, 8);
+
+                        int destOffset = 12;
+                        for (int i = 0; i < oldCount - 1; i++)
+                        {
+                            int srcOffset = 12 + (i * 4);
+                            bool isTarget = currentData[srcOffset] == MappingBytes[0] &&
+                                            currentData[srcOffset + 1] == MappingBytes[1] &&
+                                            currentData[srcOffset + 2] == MappingBytes[2] &&
+                                            currentData[srcOffset + 3] == MappingBytes[3];
+
+                            if (!isTarget)
+                            {
+                                Array.Copy(currentData, srcOffset, newData, destOffset, 4);
+                                destOffset += 4;
+                            }
+                        }
+                        Array.Clear(newData, newData.Length - 4, 4);
+                        key.SetValue(RegValue, newData, RegistryValueKind.Binary);
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"레지스트리 수정 중 오류가 발생했습니다.\n{ex.Message}", "오류", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+    }
+    #endregion
+
+    #region [ 7. 메인 트레이 앱 폼 (TrayMainForm) ]
     /// <summary>
     /// 애플리케이션의 라이프사이클과 시스템 트레이, UI 업데이트를 담당하는 메인 백그라운드 폼입니다.
     /// </summary>
@@ -576,6 +730,7 @@ namespace IMEPali
         
         private TextOverlayForm? _overlayForm;
         private KeyboardLayoutForm? _keyboardForm;
+        private ToolStripMenuItem _remapMenuItem = null!;
         
         private System.Windows.Forms.Timer _imeStatePollingTimer = null!;
         private bool _isHangulModeActive = false;
@@ -684,6 +839,29 @@ namespace IMEPali
                 if (!AppConfig.ShowTextOverlay) _overlayForm?.ClearOverlay();
             }) { Checked = AppConfig.ShowTextOverlay };
             _trayMenu.Items.Add(textOverlayMenu);
+
+            // 한자키 복원 관련 시작
+            _remapMenuItem = new ToolStripMenuItem("한자키 적용/복원 키맵핑", null, (s, e) => {
+                bool isCurrentlyApplied = RegistryHelper.IsMappingApplied();
+                bool targetApply = !isCurrentlyApplied;
+                string actionName = targetApply ? "적용" : "복원";
+
+                var confirmResult = MessageBox.Show(
+                    $"갤럭시북5 등의 Copilot 키를 한자키로 {actionName}하시겠습니까?\n(레지스트리 키맵핑이 수정되며, 원활한 진행을 위해 관리자 권한과 재부팅이 필요합니다.)",
+                    "키맵핑 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (confirmResult == DialogResult.Yes)
+                {
+                    if (RegistryHelper.ToggleMapping(targetApply))
+                    {
+                        _remapMenuItem.Checked = targetApply;
+                        MessageBox.Show($"키맵핑 {actionName} 작업이 완료되었습니다.\n정상적인 반영을 위해 시스템을 재부팅(Reboot)해 주시기 바랍니다.", 
+                                        "재부팅 필요", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+            }) { Checked = RegistryHelper.IsMappingApplied() };
+            _trayMenu.Items.Add(_remapMenuItem);
+            // 한자키 복원 관련 끝
 
             _trayMenu.Items.Add(new ToolStripSeparator());
             _trayMenu.Items.Add(new ToolStripMenuItem("종료 (Exit)", null, (s, e) => Application.Exit()));
@@ -828,7 +1006,7 @@ namespace IMEPali
     }
     #endregion
 
-    #region [ 7. UI 구성 요소: 배열창 및 오버레이 폼 ]
+    #region [ 8. UI 구성 요소: 배열창 및 오버레이 폼 ]
     public class KeyboardLayoutForm : Form
     {
         private readonly PictureBox _pictureBox;
@@ -980,7 +1158,7 @@ namespace IMEPali
     }
     #endregion
 
-    #region [ 8. NativeMethods (Win32 API P/Invoke) ]
+    #region [ 9. NativeMethods (Win32 API P/Invoke) ]
     internal static class NativeMethods
     {
         public const int WH_KEYBOARD_LL = 13;
