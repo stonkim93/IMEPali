@@ -192,28 +192,16 @@
 
 [key_cafe_EngPali1.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali1.kcf)
 
-<div align="center">
-
-![alt text](images/keys_cafe_EngPali1.jpg)
-
-</div>
-
 [key_cafe_EngPali2.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali2.kcf)
-
-
-<div align="center">
-
-![alt text](images/keys_cafe_EngPali2.jpg)
-
-</div>
 
 [key_cafe_EngPali3.kcf](https://github.com/stonkim93/IMEPali/releases/download/IMEPali/keys_cafe_EngPali3.kcf)
 
 <div align="center">
 
-![alt text](images/keys_cafe_EngPali2.jpg)
+![alt text](images/keys_cafe_EngPali.png)
 
 </div>
+
 
 **2. Gboard (구글 키보드): 개인 사전(단축키) 및 언어 설정**
 
