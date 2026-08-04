@@ -2,7 +2,7 @@
 
 # 🌍 IMEPali
 
-### I'm e-Pali that help keyboard inputs of Pali and Sanskrit
+### I'm e-Pali that helps keyboard inputs of Pali and Sanskrit.
 
 ### IME 설치없이 영어 입력모드에서 한자키로 Pali/Sanskrit 입력 지원
 
