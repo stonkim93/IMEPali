@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCopyrightAttribute("Copyright (c) 2024 stonkim93")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("Pali and Sanskrit Input Method Editor for Windows")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.2.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.2.0+dc983f9e63a6ff08c097dcfbf2e990597b7387fe")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.2.0+1c24770c6a443f18ba58316c04569dfc1766dd45")]
 [assembly: System.Reflection.AssemblyProductAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyTitleAttribute("IMEPali")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.2.0")]
