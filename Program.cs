@@ -23,17 +23,64 @@ namespace IMEPali
     /// </summary>
     internal static class AppConfig
     {
-        public static bool ShowKeyboardLayout = true;
-        public static bool ShowTextOverlay = true;
+        // UX 1: 설정 영속성 — 레지스트리 저장/로드 경로 (HKCU)
+        private const string RegPath = @"Software\IMEPali";
+
+        // UX 1: 재시작 시 레지스트리에서 로드 (기본값: true)
+        public static bool ShowKeyboardLayout = LoadBool("ShowKeyboardLayout", true);
+        public static bool ShowTextOverlay    = LoadBool("ShowTextOverlay",    true);
+
+        // UX 3: 오버레이 표시 시간(ms) 설정화 (기본값: 1500ms)
+        public static int OverlayDisplayMs = LoadInt("OverlayDisplayMs", 1500);
         
         // Pali어 전환용 트리거 키 (0x19: 한자키, 0xA3: 우측 Ctrl키)
         public static readonly int[] ToggleKeyCodes = { 0x19, 0xA3 };
         
         // 트레이 아이콘 한/영 상태 갱신 폴링 주기 (ms)
-        public static readonly int TrayUpdateIntervalMs = 100;
+        // 성능 1 개선: 100ms → 500ms (5× CPU 절약, IME 상태 변경 감지는 500ms 응답으로도 충분)
+        public static readonly int TrayUpdateIntervalMs = 500;
 
         // 트레이 메뉴의 GitHub 링크
         public static readonly string GithubRepositoryUrl = "https://github.com/stonkim93/IMEPali";
+
+        // UX 1: 현재 설정값을 레지스트리에 저장 (트레이 메뉴 토글 시 호출)
+        public static void Save()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(RegPath);
+                if (key == null) return;
+                key.SetValue("ShowKeyboardLayout", ShowKeyboardLayout ? 1 : 0, RegistryValueKind.DWord);
+                key.SetValue("ShowTextOverlay",    ShowTextOverlay    ? 1 : 0, RegistryValueKind.DWord);
+                key.SetValue("OverlayDisplayMs",   OverlayDisplayMs,           RegistryValueKind.DWord);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[IMEPali] AppConfig.Save 오류: {ex.Message}");
+            }
+        }
+
+        private static bool LoadBool(string name, bool defaultValue)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(RegPath);
+                if (key?.GetValue(name) is int v) return v != 0;
+            }
+            catch { }
+            return defaultValue;
+        }
+
+        private static int LoadInt(string name, int defaultValue)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(RegPath);
+                if (key?.GetValue(name) is int v) return v;
+            }
+            catch { }
+            return defaultValue;
+        }
     }
     #endregion
 
@@ -94,7 +141,7 @@ namespace IMEPali
             {"t", new string?[]{"t", "ṭ", null, null, null, null, null}},
             {"u", new string?[]{"u", null, "ū", null, null, null, null}},
             {"r", new string?[]{"r", "ṛ", null, "ṝ", null, null, null}},
-            {"s", new string?[]{"s", "ṣ", null, null, "ś", null, null}},
+            {"s", new string?[]{"s", "ṣ", null, null, null, "ś", null}},
         };
 
         private static readonly Dictionary<string, int> _categoryMap = new();
@@ -202,7 +249,14 @@ namespace IMEPali
     /// </summary>
     internal static class KeyboardHookManager
     {
-        public static volatile bool IsSendingInput = false;
+        // 버그 3 수정: volatile bool 대신 Interlocked로 원자적 플래그 관리
+        // SendString(비동기)과 SendReplacementText(동기)가 동일 플래그를 공유하므로 원자적 조작 필수
+        private static int _isSendingInput = 0;
+        public static bool IsSendingInput
+        {
+            get => _isSendingInput == 1;
+            set => Interlocked.Exchange(ref _isSendingInput, value ? 1 : 0);
+        }
         private static IntPtr _hookID = IntPtr.Zero;
         private static NativeMethods.LowLevelKeyboardProc _hookProcedure = HookCallback;
         
@@ -399,12 +453,18 @@ namespace IMEPali
     /// </summary>
     internal static class ClipboardUtility
     {
-        public static volatile bool IsProcessing = false;
+        // volatile bool 대신 Interlocked로 원자적 Check-Then-Act 보장 (버그 2 수정)
+        private static int _isProcessing = 0;
+        public static bool IsProcessing => _isProcessing == 1;
+
+        // 성능 2 개선: WM_CLIPBOARDUPDATE 이벤트 기반 대기용 (Busy-Wait 폴링 제거)
+        // TrayMainForm.WndProc → WM_CLIPBOARDUPDATE 수신 시 Set() 호출
+        internal static readonly ManualResetEventSlim ClipboardUpdatedEvent = new ManualResetEventSlim(false);
 
         public static void TransformAndReplaceSelectedText(string lastOutputChar, Func<string, string> transformationFunc, Action<string> updateLastCharAction)
         {
-            if (IsProcessing) return;
-            IsProcessing = true;
+            // Interlocked.CompareExchange: 0 → 1 로 바꾸는 데 성공한 스레드만 진입 (원자적)
+            if (Interlocked.CompareExchange(ref _isProcessing, 1, 0) != 0) return;
             
             // UI Automation 및 Clipboard API는 STA 스레드에서 실행되어야 함
             Thread workerThread = new Thread(() =>
@@ -445,11 +505,12 @@ namespace IMEPali
                         }
                     }
                 }
-                catch (Exception) 
-                { 
-                    // 로깅 로직 추가 권장 (예: Debug.WriteLine)
+                catch (Exception ex)
+                {
+                    // 품질 1 개선: 예외 삼킴 제거 → Debug 로깅
+                    System.Diagnostics.Debug.WriteLine($"[IMEPali] TransformAndReplace 오류: {ex.Message}");
                 }
-                finally { IsProcessing = false; }
+                finally { Interlocked.Exchange(ref _isProcessing, 0); }
             });
 
             workerThread.SetApartmentState(ApartmentState.STA); // 필수 설정
@@ -476,27 +537,33 @@ namespace IMEPali
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[IMEPali] UIA 선택 텍스트 읽기 실패: {ex.Message}");
+            }
 
             // bool isShiftHeld = (NativeMethods.GetAsyncKeyState(0x10) & 0x8000) != 0;
             string? backupClipboardText = GetClipboardText();
             try
             {
+                // 성능 2 개선: 이벤트 기반 클립보드 대기 (Busy-Wait 20ms × 20회 → 이벤트 Wait)
+                // TrayMainForm이 WM_CLIPBOARDUPDATE를 받으면 ClipboardUpdatedEvent.Set() 신호
+                ClipboardUpdatedEvent.Reset();
                 ClearClipboard();
                 SendCtrlC();
-                string? copiedText = null;
                 
-                for (int i = 0; i < 20; i++)
-                {
-                    Thread.Sleep(20);
-                    copiedText = GetClipboardText();
-                    if (!string.IsNullOrEmpty(copiedText)) break;
-                }
+                // 최대 400ms 대기. 신호 도착 즉시 빠져나옴 (평균 수십ms)
+                ClipboardUpdatedEvent.Wait(400);
+                string? copiedText = GetClipboardText();
                 
-                RestoreClipboardTextAsync(backupClipboardText);
+                _ = RestoreClipboardTextAsync(backupClipboardText); // async Task 호출 (fire-and-forget)
                 return string.IsNullOrEmpty(copiedText) ? null : copiedText.Trim('\r', '\n', '\t', ' ', '\0');
             }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[IMEPali] 클립보드 선택 텍스트 읽기 실패: {ex.Message}");
+                return null;
+            }
         }
 
         private static void SendCtrlC()
@@ -574,7 +641,9 @@ namespace IMEPali
             catch { }
         }
 
-        private static async void RestoreClipboardTextAsync(string? savedText)
+        // 버그 4 수정: async void → async Task (예외 캐치 불가 문제 해결)
+        // 호출부에서 _ = RestoreClipboardTextAsync(...) 형태로 호출하여 경고 억제
+        private static async Task RestoreClipboardTextAsync(string? savedText)
         {
             await Task.Delay(400);
             
@@ -582,7 +651,11 @@ namespace IMEPali
                 try { 
                     if (!string.IsNullOrEmpty(savedText)) Clipboard.SetText(savedText); 
                     else Clipboard.Clear(); 
-                } catch { }
+                } 
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[IMEPali] RestoreClipboardTextAsync 오류: {ex.Message}");
+                }
             });
             staThread.SetApartmentState(ApartmentState.STA);
             staThread.Start();
@@ -729,6 +802,8 @@ namespace IMEPali
         private TextOverlayForm? _overlayForm;
         private KeyboardLayoutForm? _keyboardForm;
         private ToolStripMenuItem _remapMenuItem = null!;
+        // 품질 3 개선: keyboardLayoutMenu를 필드로 승격 → 문자열 검색 없이 직접 참조
+        private ToolStripMenuItem _keyboardLayoutMenuItem = null!;
         
         private System.Windows.Forms.Timer _imeStatePollingTimer = null!;
         private bool _isHangulModeActive = false;
@@ -740,6 +815,8 @@ namespace IMEPali
             this.WindowState = FormWindowState.Minimized;
             this.Hide();
             _ = this.Handle;
+            // 성능 2 개선: 클립보드 변경 알림 등록 (WM_CLIPBOARDUPDATE 수신)
+            NativeMethods.AddClipboardFormatListener(this.Handle);
 
             InitializeTrayUI();
             KeyboardHookManager.InitializeHook();
@@ -819,21 +896,22 @@ namespace IMEPali
             _trayMenu.Items.Add(new ToolStripMenuItem("한자키로 Pali어 입력/전환") { Enabled = false });
             _trayMenu.Items.Add(new ToolStripSeparator());
 
-            var keyboardLayoutMenu = new ToolStripMenuItem("Pali어 키보드 배열창", null, (s, e) => {
+            // 품질 3 개선: 지역 변수 → 필드 참조 (OnClosedByUser에서 문자열 검색 불필요)
+            _keyboardLayoutMenuItem = new ToolStripMenuItem("Pali어 키보드 배열창", null, (s, e) => {
                 var menuItem = (ToolStripMenuItem)s!;
                 AppConfig.ShowKeyboardLayout = !menuItem.Checked;
                 menuItem.Checked = AppConfig.ShowKeyboardLayout;
-                
+                AppConfig.Save(); // UX 1: 설정 즐시 저장
                 if (!AppConfig.ShowKeyboardLayout) _keyboardForm?.Hide();
                 else UpdateKeyboardLayoutVisibility();
             }) { Checked = AppConfig.ShowKeyboardLayout };
-            _trayMenu.Items.Add(keyboardLayoutMenu);
+            _trayMenu.Items.Add(_keyboardLayoutMenuItem);
 
             var textOverlayMenu = new ToolStripMenuItem("Pali어 입력문자 표시창", null, (s, e) => {
                 var menuItem = (ToolStripMenuItem)s!;
                 AppConfig.ShowTextOverlay = !menuItem.Checked;
                 menuItem.Checked = AppConfig.ShowTextOverlay;
-                
+                AppConfig.Save(); // UX 1: 설정 즐시 저장
                 if (!AppConfig.ShowTextOverlay) _overlayForm?.ClearOverlay();
             }) { Checked = AppConfig.ShowTextOverlay };
             _trayMenu.Items.Add(textOverlayMenu);
@@ -900,10 +978,15 @@ namespace IMEPali
             
             graphics.DrawString("P", new Font("Segoe UI Black", 10, FontStyle.Bold), textBrush, new RectangleF(0, 1.5f, iconSize, iconSize), stringFormat);
 
+            // 버그 5 수정: GDI hIcon 핸들 누수 해결
+            // Icon.FromHandle(hIcon)은 GDI 핸들을 복사하지 않으므로,
+            // 새 아이콘으로 교체 후 원본 hIcon과 이전 아이콘 핸들 모두 해제해야 함
             IntPtr hIcon = bmp.GetHicon();
+            Icon newIcon = Icon.FromHandle(hIcon);
             Icon? previousIcon = _trayIcon.Icon;
-            _trayIcon.Icon = Icon.FromHandle(hIcon);
-            if (previousIcon != null) NativeMethods.DestroyIcon(previousIcon.Handle);
+            _trayIcon.Icon = newIcon;
+            previousIcon?.Dispose();
+            NativeMethods.DestroyIcon(hIcon); // GetHicon()으로 생성된 원본 GDI 핸들 해제
         }
 
         public void ShowOverlay(string text)
@@ -916,6 +999,16 @@ namespace IMEPali
                 
                 Point caretLocation = GetCaretPositionOnScreen();
                 int dynamicWidth = Math.Max(40, text.Length * 15 + 24);
+
+                // UX 2: 캐랿 위치를 못 찾은 경우(Point.Empty) 폴백 처리
+                // 화면 중앙 하단 근처로 표시하여 (0,0) 충돌 방지
+                if (caretLocation == Point.Empty)
+                {
+                    var workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
+                    caretLocation = new Point(
+                        workArea.Left + (workArea.Width - dynamicWidth) / 2,
+                        workArea.Bottom - 120);
+                }
                 
                 _overlayForm.Display(text, true, 22f, dynamicWidth, 52, caretLocation.X, caretLocation.Y + 40);
             });
@@ -958,10 +1051,8 @@ namespace IMEPali
                     _keyboardForm.OnClosedByUser += (s, e) =>
                     {
                         AppConfig.ShowKeyboardLayout = false;
-                        foreach (ToolStripItem item in _trayMenu.Items)
-                        {
-                            if (item.Text == "Pali어 키보드 배열창") ((ToolStripMenuItem)item).Checked = false;
-                        }
+                        // 품질 3 개선: 문자열 검색 제거 → 필드 직접 참조
+                        _keyboardLayoutMenuItem.Checked = false;
                     };
                 }
                 
@@ -990,12 +1081,26 @@ namespace IMEPali
         }
 
         protected override void SetVisibleCore(bool value) => base.SetVisibleCore(false);
+
+        /// <summary>
+        /// 성능 2 개선: WM_CLIPBOARDUPDATE 수신 시 ClipboardUtility의 이벤트를 신호 처리
+        /// </summary>
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == NativeMethods.WM_CLIPBOARDUPDATE)
+            {
+                ClipboardUtility.ClipboardUpdatedEvent.Set();
+            }
+            base.WndProc(ref m);
+        }
         
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             _imeStatePollingTimer?.Stop();
             _imeStatePollingTimer?.Dispose();
             
+            // 성능 2 개선: 앱 종료 시 클립보드 알림 해제
+            NativeMethods.RemoveClipboardFormatListener(this.Handle);
             KeyboardHookManager.ReleaseHook();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
@@ -1034,10 +1139,14 @@ namespace IMEPali
             this.ShowInTaskbar = true;
             this.TopMost = true; 
             this.Text = "Pali어 키보드 배열창";
-            
-            int screenWidth = Screen.PrimaryScreen?.WorkingArea.Width ?? 800;
+
+            // UX 4: 저장된 위치 복원. 저장값이 없으면 화면 중앙 상단 기본 위치
             this.StartPosition = FormStartPosition.Manual;
-            this.Location = new Point(Math.Max(0, (screenWidth - this.Width) / 2), 50);
+            if (!RestoreLocationFromRegistry())
+            {
+                int screenWidth = Screen.PrimaryScreen?.WorkingArea.Width ?? 800;
+                this.Location = new Point(Math.Max(0, (screenWidth - this.Width) / 2), 50);
+            }
 
             try 
             { 
@@ -1053,6 +1162,9 @@ namespace IMEPali
             };
             _pictureBox.DoubleClick += (s, e) => OnLayoutDoubleClicked?.Invoke(this, EventArgs.Empty);
             this.Controls.Add(_pictureBox);
+
+            // UX 4: 이동/크기 변경 시 위치 저장
+            this.LocationChanged += (s, e) => SaveLocationToRegistry();
         }
 
         public void RenderImage(string resourceName)
@@ -1088,6 +1200,45 @@ namespace IMEPali
             }
             base.OnFormClosing(e);
         }
+
+        // UX 4: 현재 위치를 HKCU\Software\IMEPali에 저장
+        private void SaveLocationToRegistry()
+        {
+            if (this.WindowState != FormWindowState.Normal) return;
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(@"Software\IMEPali");
+                key?.SetValue("KeyboardFormX", this.Left, RegistryValueKind.DWord);
+                key?.SetValue("KeyboardFormY", this.Top,  RegistryValueKind.DWord);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[IMEPali] KeyboardForm 위치 저장 오류: {ex.Message}");
+            }
+        }
+
+        // UX 4: 저장된 위치 복원. 화면 밀밖이면 false 반환
+        private bool RestoreLocationFromRegistry()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\IMEPali");
+                if (key?.GetValue("KeyboardFormX") is int x &&
+                    key?.GetValue("KeyboardFormY") is int y)
+                {
+                    var workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
+                    // 화면 바깥의 위치라면 복원 거부
+                    if (x >= workArea.Left && x < workArea.Right - 50 &&
+                        y >= workArea.Top  && y < workArea.Bottom - 30)
+                    {
+                        this.Location = new Point(x, y);
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
     }
 
     public class TextOverlayForm : Form
@@ -1118,7 +1269,8 @@ namespace IMEPali
             this.TopMost = true;
             this.ShowInTaskbar = false;
 
-            _visibilityTimer = new System.Windows.Forms.Timer { Interval = 1500 };
+            // UX 3: 하드코딩 1500ms → AppConfig.OverlayDisplayMs 설정값 사용
+            _visibilityTimer = new System.Windows.Forms.Timer { Interval = AppConfig.OverlayDisplayMs };
             _visibilityTimer.Tick += (s, e) => this.Hide();
             
             this.Paint += OnFormPaint;
@@ -1237,6 +1389,33 @@ namespace IMEPali
         public const int IMC_GETCONVERSIONMODE = 0x0001;
         public const uint IME_CMODE_NATIVE = 0x0001;
         public const uint SMTO_ABORTIFHUNG = 0x0002;
+
+        // 성능 2 개선: 클립보드 변경 알림 API
+        public const uint WM_CLIPBOARDUPDATE = 0x031D;
+        [DllImport("user32.dll", SetLastError = true)] public static extern bool AddClipboardFormatListener(IntPtr hwnd);
+        [DllImport("user32.dll", SetLastError = true)] public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+    }
+    #endregion
+
+    #region [ 10. 가상 키 코드 상수 (VK) ]
+    /// <summary>
+    /// 품질 2 개선: 코드 전반의 매직 넘버를 제거하기 위한 가상 키 코드 상수 모음.
+    /// 신규 코드 작성 시 하드코딩 대신 이 클래스를 참조할 것.
+    /// </summary>
+    internal static class VK
+    {
+        public const int SHIFT    = 0x10; // Shift (공통)
+        public const int LSHIFT   = 0xA0; // 왼쪽 Shift
+        public const int RSHIFT   = 0xA1; // 오른쪽 Shift
+        public const int CAPITAL  = 0x14; // Caps Lock
+        public const int HANJA    = 0x19; // 한자키
+        public const int LWIN     = 0x5B; // 왼쪽 Windows 키 (Copilot 방어에 사용)
+        public const int RCONTROL = 0xA3; // 오른쪽 Ctrl (토글키 겸용)
+        public const int BACK     = 0x08; // Backspace
+        public const int CTRL     = 0x11; // Ctrl (공통)
+        public const int C_KEY    = 0x43; // C (Ctrl+C 복사에 사용)
+        public const int RIGHT    = 0x27; // 오른쪽 화살표 (선택 해제에 사용)
+        // A~Z: 0x41~0x5A (범위로 사용)
     }
     #endregion
 }
